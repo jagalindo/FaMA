@@ -1,9 +1,18 @@
 package es.us.isa.OpenWBOReasoner.questions;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import es.us.isa.FAMA.Benchmarking.PerformanceResult;
 import es.us.isa.FAMA.Reasoner.Reasoner;
 import es.us.isa.FAMA.models.variabilityModel.VariabilityElement;
 import es.us.isa.FAMA.stagedConfigManager.Configuration;
@@ -44,9 +53,9 @@ public class OpenWBOBOLONMAXSAT extends OpenWBOQuestion{
 			configurationConstraints.add(name);
 
 			if (e.getValue() > 0) {
-				selectedConstraints.add(name);
+				selectedConstraints.add(var+" 0");
 			} else if (e.getValue() == 0) {
-				deselectedConstraints.add(name);
+				deselectedConstraints.add("-"+var+" 0");
 			}
 		}
 
@@ -59,6 +68,71 @@ public class OpenWBOBOLONMAXSAT extends OpenWBOQuestion{
 
 		// Get all model variables
 		variables = ((OpenWBOReasoner) r).variables;
+
+	}
+	
+	
+	public PerformanceResult answer(Reasoner r) {
+		createSAT();
+		return null;
+	}
+
+	
+	private boolean createSAT() {
+		//First calculate the top value.
+		int top = deselectedConstraints.size()+1;
+		
+		
+		// First we create the content of the cnf
+		String cnf_content = "c CNF file\n";
+
+		// We show as comments the variables's number
+		Iterator<String> it = reasoner.variables.keySet().iterator();
+		while (it.hasNext()) {
+			String varName = it.next();
+			cnf_content += "c var " + reasoner.variables.get(varName) + " = " + varName + "\n";
+		}
+
+		// Start the problem
+		cnf_content += "p wcnf " + reasoner.variables.size() + " " + (-1 + modelConstraints.size()+selectedConstraints.size()+deselectedConstraints.size()) + " "+top+"\n";
+		// Clauses
+		it = modelConstraints.iterator();
+		while (it.hasNext()) {
+			cnf_content += top + " " + (String) it.next() + "\n";
+		}
+
+		for(String s: selectedConstraints) {
+			cnf_content+= top + " " +s + "\n";
+		}
+		
+		for(String s: deselectedConstraints) {
+			cnf_content+= "1 " +s + "\n";
+		}
+		// End file
+		cnf_content += "0";
+		boolean res = false;
+		try {
+			//File tmpFile = File.createTempFile("cnf", "fm");
+			File tmpFile = new File("C:\\glucose\\test.cnf");
+			PrintWriter out = new PrintWriter(tmpFile);
+			out.print(cnf_content);
+			out.close();
+//			Process p = Runtime.getRuntime().exec("bash.exe -c \"/mnt/c/glucose/glucose /mnt/c/glucose/test.cnf\"");
+//			BufferedReader stdInput = new BufferedReader(new 
+//				     InputStreamReader(p.getInputStream()));
+//			String outStr ="";
+//			String s = null;
+//			while ((s = stdInput.readLine()) != null) {
+//			    outStr+=s;
+//			}
+//			res=outStr.contains("UNSATISFIABLE");
+//			
+		} catch (FileNotFoundException e1) {
+			e1.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		return res;
 
 	}
 }
