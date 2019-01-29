@@ -1,4 +1,4 @@
-package es.us.isa.Choco.fmdiag;
+package es.us.isa.Choco.fmdiag.configuration;
 
 import java.util.ArrayList;
 import java.util.Collection;

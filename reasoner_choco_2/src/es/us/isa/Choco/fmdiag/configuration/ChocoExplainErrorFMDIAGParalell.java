@@ -1,4 +1,4 @@
-package es.us.isa.Choco.fmdiag;
+package es.us.isa.Choco.fmdiag.configuration;
 
 import static choco.Choco.eq;
 
