@@ -2,29 +2,22 @@ package es.us.isa.Choco.fmdiag.configuration;
 
 import static choco.Choco.eq;
 
-import java.lang.management.ThreadInfo;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Set;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CompletionService;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.Future;
 import java.util.concurrent.RecursiveTask;
 
-import choco.Choco;
 import choco.cp.model.CPModel;
 import choco.cp.solver.CPSolver;
 import choco.kernel.model.Model;
@@ -39,115 +32,106 @@ import es.us.isa.FAMA.Benchmarking.PerformanceResult;
 import es.us.isa.FAMA.Exceptions.FAMAException;
 import es.us.isa.FAMA.Reasoner.Reasoner;
 import es.us.isa.FAMA.Reasoner.questions.ExplainErrorsQuestion;
-import es.us.isa.FAMA.Reasoner.questions.ValidConfigurationErrorsQuestion;
 import es.us.isa.FAMA.errors.Error;
 import es.us.isa.FAMA.errors.Observation;
 import es.us.isa.FAMA.models.featureModel.GenericFeature;
-import es.us.isa.FAMA.models.featureModel.Product;
 import es.us.isa.FAMA.models.variabilityModel.VariabilityElement;
-import es.us.isa.FAMA.stagedConfigManager.Configuration;
 
-import java.util.Arrays;
-import java.util.Collections;
-
-public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements ValidConfigurationErrorsQuestion {
+public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements ExplainErrorsQuestion {
 
 	public boolean returnAllPossibeExplanations = false;
 	private ChocoReasoner chReasoner;
+	public List<String> explanations;
 
+	Collection<Error> errors;
 	Map<String, Constraint> relations = null;
-	public boolean flexactive = false;
-	public int m = 1;
+	//int numberOfThreads = Runtime.getRuntime().availableProcessors();
+	public int numberOfThreads = 4;
 
-	Product s,r;
-	public Map<String, Constraint> result = new HashMap<String, Constraint>();
-
-	public void setConfiguration(Product s) {
-		this.s=s;
-	}
-
-	public void setRequirement(Product r) {
-		this.r=r;
-	}
-	
-	
-	public int numberOfThreads = 2;
-	public int baseSize = 100;
-
-	//public ExecutorService executorService = Executors.newCachedThreadPool();
-	public ExecutorService executorService;
-	////////////For Parallel FlexDiag...
-
-	public ChocoExplainErrorFMDIAGParalell(int t){
-		this.m = 1;
-		this.numberOfThreads = t;
-
-		//executorService = Executors.newFixedThreadPool(2);
-	}
-	
-	//
+//	ExecutorService executorService = Executors.newCachedThreadPool();
 
 	public PerformanceResult answer(Reasoner r) throws FAMAException {
+
+		ChocoResult res = new ChocoResult();
 		chReasoner = (ChocoReasoner) r;
-		// solve the problem y fmdiag
-		relations = new HashMap<String, Constraint>();
 
-		Map<String, Constraint> productConstraint = new HashMap<String, Constraint>();
-		ArrayList<String> feats= new ArrayList<String>();
-		for (GenericFeature f : this.s.getFeatures()) {
-			IntegerVariable var = chReasoner.getVariables().get(f.getName());
-			String name="U_" + f.getName();
-			productConstraint.put(name, Choco.eq(var, 0));
-			feats.add(name);
+		if ((errors == null) || errors.isEmpty()) {
+			errors = new LinkedList<Error>();
+			return res;
 		}
 
-		Map<String, Constraint> requirementConstraint = new HashMap<String, Constraint>();
-		for (GenericFeature f : this.r.getFeatures()) {
-			IntegerVariable var = chReasoner.getVariables().get(f.getName());
-			requirementConstraint.put("R_" + f.getName(), Choco.eq(var, 1));
+		Iterator<Error> itE = this.errors.iterator();
+		Map<String, IntegerVariable> vars = chReasoner.getVariables();
+		Map<String, IntegerExpressionVariable> setVars = chReasoner.getSetRelations();
+		// mientras haya errores
+		while (itE.hasNext()) {
+			// crear una lista de constraints, que impondremos segun las
+			// observaciones
+			Error e = itE.next();
+
+			// System.out.println("Explanations for "+e.toString());
+			Map<String, Constraint> cons4obs = new HashMap<String, Constraint>();
+			Observation obs = e.getObservation();
+			Map<? extends VariabilityElement, Object> values = obs.getObservation();
+			Iterator<?> its = values.entrySet().iterator();
+
+			// mientras haya observations
+			// las imponemos al problema como restricciones
+			while (its.hasNext()) {
+				int i = 0;
+				try {
+					Entry<? extends VariabilityElement, Object> entry = (Entry<? extends VariabilityElement, Object>) its
+							.next();
+					Constraint cn;
+					int value = (Integer) entry.getValue();
+					VariabilityElement ve = entry.getKey();
+					if (ve instanceof GenericFeature) {
+						IntegerVariable arg0 = vars.get(ve.getName());
+						cn = eq(arg0, value);
+					} else {
+						IntegerExpressionVariable arg0 = setVars.get(ve.getName());
+						cn = eq(arg0, value);
+					}
+					cons4obs.put("Temporary" + i, cn);
+					i++;
+				} catch (ClassCastException exc) {
+				}
+			}
+
+			// solve the problem y fmdiag
+			relations = new HashMap<String, Constraint>();
+			relations.putAll(cons4obs);
+			relations.putAll(chReasoner.getRelations());
+
+			CopyOnWriteArrayList<String> S = new CopyOnWriteArrayList<String>(chReasoner.getRelations().keySet());	
+	//		ArrayList<String> S = new ArrayList<String>(chReasoner.getRelations().keySet());
+			CopyOnWriteArrayList<String> AC = new CopyOnWriteArrayList<String>(relations.keySet());
+	//		ArrayList<String> AC = new ArrayList<String>(relations.keySet());
+
+			if (returnAllPossibeExplanations == false) {
+				List<String> fmdiag = fmdiag(S, AC);
+				// System.out.println("Relation "+fmdiag.get(0)+" is causing the
+				// conflict");
+				explanations = fmdiag;
+			} else {
+				List<String> allExpl = new LinkedList<String>();
+				List<String> fmdiag = fmdiag(S, AC);
+				while (fmdiag.size() != 0) {
+					allExpl.addAll(fmdiag);
+					S.removeAll(fmdiag);
+					AC.removeAll(fmdiag);
+					fmdiag = fmdiag(S, AC);
+				}
+				explanations = fmdiag;
+				// for(String str:allExpl){
+				// System.out.println("Relation "+str+" is causing the
+				// conflict");
+				// }
+			}
+
 		}
-
-		relations.putAll(chReasoner.getRelations());
-		relations.putAll(requirementConstraint);
-		relations.putAll(productConstraint);
-		
-		CopyOnWriteArrayList<String> S = new CopyOnWriteArrayList<String>(feats);
-		//System.out.println("Order of S: "+S);
-		CopyOnWriteArrayList<String> AC = new CopyOnWriteArrayList<String>(relations.keySet());
-		//AC.addAll(productConstraint.keySet());
-
-	    //////////////////////////////*******************
-		if (returnAllPossibeExplanations == false) {
-
-			List<String> fmdiag = fmdiag(S, AC);
-
-			for (String s : fmdiag) {
-				result.put(s, productConstraint.get(s));
-			}
-
-		} else {
-			List<String> allExpl = new LinkedList<String>();
-			List<String> fmdiag = fmdiag(S, AC);
-
-			while (fmdiag.size() != 0) {
-				allExpl.addAll(fmdiag);
-				S.removeAll(fmdiag);
-				AC.removeAll(fmdiag);
-				fmdiag = fmdiag(S, AC);
-			}
-			for (String s : allExpl) {
-				result.put(s, productConstraint.get(s));
-			}
-		}
-
 		return new ChocoResult();
-	}
-	
-	private List<String> plus(List<String> a1, List<String> a2) {
-		List<String> res = new ArrayList<String>();
-		res.addAll(a1);
-		res.addAll(a2);
-		return res;
+
 	}
 
 	public CopyOnWriteArrayList<String> fmdiag(CopyOnWriteArrayList<String> S, CopyOnWriteArrayList<String> AC) {
@@ -158,7 +142,7 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 		else { 		
 			//(AC + S) is non-consistent
 			ForkJoinPool pool = new ForkJoinPool(numberOfThreads);
-			diagThreadsFJ dt = new diagThreadsFJ(new CopyOnWriteArrayList<String>(), S, AC, numberOfThreads, executorService);
+			diagThreadsFJ dt = new diagThreadsFJ(new CopyOnWriteArrayList<String>(), S, AC, numberOfThreads);
 			CopyOnWriteArrayList<String> solution = pool.invoke(dt);
 			return solution;
 		}
@@ -172,11 +156,11 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 		CPModel p = new CPModel();
 		
 	    
-		public diagThreadsFJ(CopyOnWriteArrayList<String> D, CopyOnWriteArrayList<String> S,CopyOnWriteArrayList<String> AC, int numberOfSplits, ExecutorService executorService){
+		public diagThreadsFJ(CopyOnWriteArrayList<String> D, CopyOnWriteArrayList<String> S,CopyOnWriteArrayList<String> AC, int numberOfSplits){
 			this.D=D;
 			this.S=S;
 			this.AC=AC;
-			this.executorService=executorService;
+//			this.executorService=executorService;
 			this.numberOfSplits=numberOfSplits;	
 		
 			p.addVariables(chReasoner.getVars());
@@ -212,15 +196,10 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 		 *If this solution is not 'flexible' and S contains only one rule, then S is the looked inconsistent set*/
 		
 		/*2nd base case*/
-		if(flexactive){
-			if(S.size()<=m){
-			   return S;
-			}
-		}else{				
-			if (S.size()==1){
+		if (S.size()==1){
 	    	   return S;
-			}
 		}
+		
 		
 		/*outList corresponds to a results list for the threads of the solution*/
 		CopyOnWriteArrayList<CopyOnWriteArrayList<String>> outLists= 
@@ -256,7 +235,7 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 			CopyOnWriteArrayList<String> rest= getRest(s,splitListToSubLists);	
 			CopyOnWriteArrayList<String> less = less(AC,rest);
 
-			diagThreadsFJ dt = new diagThreadsFJ(rest, s, less , numberOfSplits, executorService);
+			diagThreadsFJ dt = new diagThreadsFJ(rest, s, less , numberOfSplits);
 			dt.fork();
 			
 			forks.add(dt);
@@ -286,7 +265,7 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 		CopyOnWriteArrayList<String> s = splitListToSubLists.get(actDiv);
 		CopyOnWriteArrayList<String> less = less(AC,fullSolution1);
 		
-		diagThreadsFJ dt = new diagThreadsFJ(fullSolution1, s, less, numberOfSplits, executorService);
+		diagThreadsFJ dt = new diagThreadsFJ(fullSolution1, s, less, numberOfSplits);
 		dt.fork();
 		
 		outLists.add(dt.join());						
@@ -342,7 +321,7 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 		  return subLists;	
 		}
    }
-	
+
 	public <T> List<List<T>> splitListToSubLists(List<T> parentList, int subListSize) {
 		List<List<T>> subLists = new ArrayList<List<T>>();
 		  
@@ -415,16 +394,11 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 	   return s.isFeasible();
 	}
 
-	@Override
-	public void setProduct(Product p) {
-		// TODO Auto-generated method stub
-		
+	public void setErrors(Collection<Error> colErrors) {
+		this.errors= colErrors;
 	}
 
-	@Override
-	public boolean isValid() {
-		// TODO Auto-generated method stub
-		return false;
+	public Collection<Error> getErrors() {
+		return errors;
 	}
-	
 }
