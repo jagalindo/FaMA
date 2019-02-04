@@ -21,14 +21,14 @@
  */
 package es.us.isa.FAMA.models.featureModel;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
-import java.util.ArrayList;
-
 
 import es.us.isa.FAMA.models.variabilityModel.GenericProduct;
 import es.us.isa.FAMA.models.variabilityModel.VariabilityElement;
+import es.us.isa.FAMA.stagedConfigManager.Configuration;
 
 
 
@@ -102,5 +102,29 @@ public class Product extends GenericProduct{
 
 	public void setName(String name) {
 		this.name = name;
+	}
+
+	public Configuration toConfiguration() {
+		Configuration conf = new Configuration();
+		
+		for (VariabilityElement e :listOfElements){
+			conf.addElement(e, 1);
+		}
+		
+		return conf;
+	}
+	
+	public Configuration toConfiguration( Collection<? extends GenericFeature> fmfeats) {
+		Configuration c = new Configuration();
+		for (GenericFeature f : fmfeats) {
+
+			if (this.getFeatures().contains(f)) {
+				c.addElement(f, 1);
+			} else {
+				c.addElement(f, 0);
+			}
+
+		}
+		return c;
 	}
 }

@@ -23,8 +23,11 @@ import java.io.FileReader;
 import java.io.PrintStream;
 import java.util.StringTokenizer;
 
+import es.us.isa.FAMA.models.FAMAfeatureModel.FAMAFeatureModel;
 import es.us.isa.FAMA.models.FAMAfeatureModel.Feature;
+import es.us.isa.FAMA.models.featureModel.GenericFeature;
 import es.us.isa.FAMA.models.featureModel.Product;
+import es.us.isa.FAMA.stagedConfigManager.Configuration;
 
 public class ProductWriterReader {
 
@@ -48,12 +51,12 @@ public class ProductWriterReader {
 		}
 	}
 
-	public Product restoreProduct(String path) {
+	public Product readProduct(String path) {
 		Product p = new Product();
 		try {
 			// Open the file that is the first
 			// command line parameter
-			BufferedReader bf = new BufferedReader(new FileReader("datos.txt"));
+			BufferedReader bf = new BufferedReader(new FileReader(path));
 			String readedLine = bf.readLine();
 			StringTokenizer tokenizer = new StringTokenizer(readedLine,";");
 			while(tokenizer.hasMoreTokens()){
@@ -67,4 +70,6 @@ public class ProductWriterReader {
 		}
 		return p;
 	}
+	
+	
 }

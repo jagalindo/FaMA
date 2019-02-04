@@ -46,9 +46,11 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Ex
 	Collection<Error> errors;
 	Map<String, Constraint> relations = null;
 	//int numberOfThreads = Runtime.getRuntime().availableProcessors();
-	public int numberOfThreads = 4;
 
-//	ExecutorService executorService = Executors.newCachedThreadPool();
+  int numberOfThreads = 1;
+	
+	ExecutorService executorService = Executors.newCachedThreadPool();
+
 
 	public PerformanceResult answer(Reasoner r) throws FAMAException {
 
