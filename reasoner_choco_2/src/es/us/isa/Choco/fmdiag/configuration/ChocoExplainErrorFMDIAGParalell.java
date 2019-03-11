@@ -17,6 +17,7 @@ import choco.cp.solver.CPSolver;
 import choco.kernel.model.constraints.Constraint;
 import choco.kernel.model.variables.integer.IntegerVariable;
 import choco.kernel.solver.Solver;
+import es.us.isa.Choco.fmdiag.configuration.ChocoExplainErrorFMDIAGParalellExecutor.diagThreads;
 import es.us.isa.ChocoReasoner.ChocoQuestion;
 import es.us.isa.ChocoReasoner.ChocoReasoner;
 import es.us.isa.ChocoReasoner.ChocoResult;
@@ -55,10 +56,6 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 	public ChocoExplainErrorFMDIAGParalell(int m, int t) {
 		this.m = m;
 		this.numberOfThreads = t;
-
-	}
-
-	//
 
 	public PerformanceResult answer(Reasoner r) throws FAMAException {
 		chReasoner = (ChocoReasoner) r;
@@ -120,8 +117,10 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 			return new CopyOnWriteArrayList<String>();
 		} else {
 			// (AC + S) is non-consistent
-			ForkJoinPool pool = new ForkJoinPool(numberOfThreads);
+			ForkJoinPool pool = ForkJoinPool.commonPool();//new ForkJoinPool(numberOfThreads);
 			diagThreadsFJ dt = new diagThreadsFJ(new CopyOnWriteArrayList<String>(), S, AC, numberOfThreads);
+		    dt.type = 1; dt.res=-1;
+		    
 			CopyOnWriteArrayList<String> solution = pool.invoke(dt);
 			return solution;
 		}
@@ -142,6 +141,18 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 		int numberOfSplits;
 
 		CPModel p = new CPModel();
+		
+		Integer type; 
+		/*type 1 = main thread that can create other threads
+		  type 2 = thread to review base cases only
+		*/
+				
+		Integer res; 
+		/*res 1 = base case 1
+		  res 2 = base case 2
+		  res 2 = no solution (type 2 thread)
+		*/
+		
 
 		public diagThreadsFJ(CopyOnWriteArrayList<String> D, CopyOnWriteArrayList<String> S,
 				CopyOnWriteArrayList<String> AC, int numberOfSplits) {
@@ -173,6 +184,8 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 				 * Since AC does not contain D, when D is not empty and AC is consistent, then D
 				 * contains inconsistencies then D is analyzed to look for them
 				 */
+				this.res = 1;
+
 				return new CopyOnWriteArrayList<String>();
 			}
 
@@ -189,12 +202,21 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 			/* 2nd base case */
 			if (flexactive) {
 				if (S.size() <= m) {
+					this.res = 2;
+
 					return S;
 				}
 			} else {
 				if (S.size() == 1) {
+					this.res = 2;
+
 					return S;
 				}
+			}
+
+			if (this.type==2){ /*3rdbase case - type 2 and no solution*/
+				this.res=3;
+				return new CopyOnWriteArrayList<String>();
 			}
 
 			/* outList corresponds to a results list for the threads of the solution */
@@ -211,44 +233,67 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 				div = 1;
 
 			CopyOnWriteArrayList<CopyOnWriteArrayList<String>> splitListToSubLists = splitListToSubLists(S, div);
-			int actDiv = 0, maxDiv = splitListToSubLists.size();
-
 			CopyOnWriteArrayList<RecursiveTask<CopyOnWriteArrayList<String>>> forks = new CopyOnWriteArrayList<>();
 
-			for (CopyOnWriteArrayList<String> s : splitListToSubLists) {
+			////*CONQUER PHASE*////		
+			CopyOnWriteArrayList<CopyOnWriteArrayList<String>> rest = new CopyOnWriteArrayList<CopyOnWriteArrayList<String>>();
+			CopyOnWriteArrayList<CopyOnWriteArrayList<String>> less = new CopyOnWriteArrayList<CopyOnWriteArrayList<String>>();
+		    ArrayList<diagThreadsFJ> threads = new ArrayList<diagThreadsFJ>();	
+			
+			int j=0;
+			for(int i = splitListToSubLists.size()-1; i>=0; i--){
+				CopyOnWriteArrayList<String> s = splitListToSubLists.get(i);	//S	
 				/*
 				 * For each partition 's', we define its complement 'rest' (AC - s) and the
-				 * rules set 'less' (AC - rest). Then, a new thread 'dt' is defined with D=rest,
-				 * S=s, and AC=less, 'dt' is run, and its results are grouped in the results
+				 * rules set 'less' (AC - s). Then, a new thread 'dt' is defined with D = s,
+				 * S = rest, and AC = less, 'dt' is run, and its results are grouped in the results
 				 * list
 				 */
-				if (actDiv == (maxDiv - 1))
-					break;
-
-				CopyOnWriteArrayList<String> rest = getRest(s, splitListToSubLists);
-				CopyOnWriteArrayList<String> less = less(AC, rest);
-
-				diagThreadsFJ dt = new diagThreadsFJ(rest, s, less , numberOfSplits);
+				rest.add(getRest(s,splitListToSubLists));	//D
+				less.add(less(AC,s));
+				
+				/*a new thread to define if it can directly find the preferred inconsistency*/
+				diagThreadsFJ dt = new diagThreadsFJ(s, rest.get(j), less.get(j) , this.numberOfSplits); 
+				dt.type = 2; 
+				threads.add(dt);
+				
 				dt.fork();
-
 				forks.add(dt);
-
-				if (actDiv < (maxDiv - 1)) {
-					actDiv++;
-				}
+				j++;
 			}
 
-			/* We save and return the union of the results of lists */
-			CopyOnWriteArrayList<String> fullSolution1 = plus(outLists);
+			/*The results are take for each created thread!
+			 looking for the preferred diagnosis. 
+			 If some thread found a diagnosis(they are obtained in a preferred order),
+			 that thread is the winner (siblings and nephews threads possibly return)..*/
+			int i=0; Boolean sw=false; Integer posZero=-1;
 
-			/* FMDiag 2nd call */
-			CopyOnWriteArrayList<String> s = splitListToSubLists.get(actDiv);
-			CopyOnWriteArrayList<String> less = less(AC, fullSolution1);
+			for(RecursiveTask<CopyOnWriteArrayList<String>> subTask: forks){
+				CopyOnWriteArrayList<String> rr = subTask.join();
+				
+				if (rr.size()>=0 && !sw && threads.get(i).res != 3){ //thread found a 'base case', i.e., that thread can find or found a solution  
+					outLists.add(rr);
+					if (rr.size() > 0 && posZero==-1){ //if that thread is the first discovering a solution 
+						posZero = -1; sw=true; //thread is the winner
+					}else if (posZero==-1)
+						posZero=i;
+				}
+				
+				i++;
+			}
 
-			diagThreadsFJ dt = new diagThreadsFJ(fullSolution1, s, less, numberOfSplits);
-			dt.fork();
-
-			outLists.add(dt.join());
+			//if no thread directly found a solution, we choose the one that work on the preferred set for diagnosis 
+			if (posZero != -1){
+				/*FMDiag 2nd call*/
+				CopyOnWriteArrayList<String> s = splitListToSubLists.get(splitListToSubLists.size()-1-posZero);
+				CopyOnWriteArrayList<String> acc = less(AC, outLists.get(posZero));
+				diagThreadsFJ dt = new diagThreadsFJ(outLists.get(posZero), s, acc, numberOfSplits);
+				dt.type = 1;  
+						
+				dt.fork();
+				outLists.add(dt.join());						
+			}
+			
 			CopyOnWriteArrayList<String> fullSolution = plus(outLists);
 
 			return fullSolution;
