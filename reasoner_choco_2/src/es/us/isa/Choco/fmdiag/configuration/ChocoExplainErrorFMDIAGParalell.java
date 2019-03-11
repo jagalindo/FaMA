@@ -56,7 +56,6 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 	public ChocoExplainErrorFMDIAGParalell(int m, int t) {
 		this.m = m;
 		this.numberOfThreads = t;
-	}
 
 	public PerformanceResult answer(Reasoner r) throws FAMAException {
 		chReasoner = (ChocoReasoner) r;
@@ -154,6 +153,7 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 		  res 2 = no solution (type 2 thread)
 		*/
 		
+
 		public diagThreadsFJ(CopyOnWriteArrayList<String> D, CopyOnWriteArrayList<String> S,
 				CopyOnWriteArrayList<String> AC, int numberOfSplits) {
 			this.D = D;
@@ -185,6 +185,7 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 				 * contains inconsistencies then D is analyzed to look for them
 				 */
 				this.res = 1;
+
 				return new CopyOnWriteArrayList<String>();
 			}
 
@@ -202,11 +203,13 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 			if (flexactive) {
 				if (S.size() <= m) {
 					this.res = 2;
+
 					return S;
 				}
 			} else {
 				if (S.size() == 1) {
 					this.res = 2;
+
 					return S;
 				}
 			}
@@ -292,7 +295,7 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 			}
 			
 			CopyOnWriteArrayList<String> fullSolution = plus(outLists);
-			
+
 			return fullSolution;
 		}
 
@@ -402,4 +405,5 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 		// TODO Auto-generated method stub
 		return false;
 	}
+
 }

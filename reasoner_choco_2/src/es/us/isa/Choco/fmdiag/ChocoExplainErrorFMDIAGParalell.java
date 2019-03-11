@@ -1,4 +1,4 @@
-package es.us.isa.Choco.fmdiag.configuration;
+package es.us.isa.Choco.fmdiag;
 
 import static choco.Choco.eq;
 
@@ -11,12 +11,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.RecursiveTask;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import choco.cp.model.CPModel;
 import choco.cp.solver.CPSolver;
@@ -25,6 +24,7 @@ import choco.kernel.model.constraints.Constraint;
 import choco.kernel.model.variables.integer.IntegerExpressionVariable;
 import choco.kernel.model.variables.integer.IntegerVariable;
 import choco.kernel.solver.Solver;
+import es.us.isa.Choco.fmdiag.ChocoExplainErrorFMDIAGParalell.diagThreads;
 import es.us.isa.ChocoReasoner.ChocoQuestion;
 import es.us.isa.ChocoReasoner.ChocoReasoner;
 import es.us.isa.ChocoReasoner.ChocoResult;
@@ -46,11 +46,9 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Ex
 	Collection<Error> errors;
 	Map<String, Constraint> relations = null;
 	//int numberOfThreads = Runtime.getRuntime().availableProcessors();
-
-  int numberOfThreads = 1;
+	int numberOfThreads = 1;
 	
 	ExecutorService executorService = Executors.newCachedThreadPool();
-
 
 	public PerformanceResult answer(Reasoner r) throws FAMAException {
 
@@ -105,11 +103,8 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Ex
 			relations.putAll(cons4obs);
 			relations.putAll(chReasoner.getRelations());
 
-			CopyOnWriteArrayList<String> S = new CopyOnWriteArrayList<String>(chReasoner.getRelations().keySet());	
-	//		ArrayList<String> S = new ArrayList<String>(chReasoner.getRelations().keySet());
-			CopyOnWriteArrayList<String> AC = new CopyOnWriteArrayList<String>(relations.keySet());
-	//		ArrayList<String> AC = new ArrayList<String>(relations.keySet());
-
+			ArrayList<String> S = new ArrayList<String>(chReasoner.getRelations().keySet());
+			ArrayList<String> AC = new ArrayList<String>(relations.keySet());
 			if (returnAllPossibeExplanations == false) {
 				List<String> fmdiag = fmdiag(S, AC);
 				// System.out.println("Relation "+fmdiag.get(0)+" is causing the
@@ -136,150 +131,81 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Ex
 
 	}
 
-	public CopyOnWriteArrayList<String> fmdiag(CopyOnWriteArrayList<String> S, CopyOnWriteArrayList<String> AC) {
-		//S is empty or (AC - S) non-consistent
+	public List<String> fmdiag(List<String> S, List<String> AC) {
 		if (S.size() == 0 || !isConsistent(less(AC, S))) {
-			return new CopyOnWriteArrayList<String>();
-		} 
-		else { 		
-			//(AC + S) is non-consistent
-			ForkJoinPool pool = new ForkJoinPool(numberOfThreads);
-			diagThreadsFJ dt = new diagThreadsFJ(new CopyOnWriteArrayList<String>(), S, AC, numberOfThreads);
-			CopyOnWriteArrayList<String> solution = pool.invoke(dt);
-			return solution;
+			return new ArrayList<String>();
+		} else {
+			diagThreads dt = new diagThreads(new ArrayList<String>(), S, AC, numberOfThreads, executorService);
+			Future<List<String>> submit = executorService.submit(dt);
+		
+			
+		//	executorService.shutdown();
+			try {
+				//executorService.awaitTermination(1, TimeUnit.MINUTES);
+			//	System.out.println("RESULT:"+submit.get());
+				return submit.get();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+				return new LinkedList<String>();
+			} catch (ExecutionException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+				return new LinkedList<String>();
+			}
 		}
 	}
 
-	public class diagThreadsFJ extends RecursiveTask<CopyOnWriteArrayList<String>>{
-		CopyOnWriteArrayList<String> D, S, AC;
+	public class diagThreads implements Callable<List<String>>{
+		List<String> D, S, AC;
 		int numberOfSplits;
 		ExecutorService executorService;
+		int consistencyDetails=0;		
 
 		CPModel p = new CPModel();
-		
-	    
-		public diagThreadsFJ(CopyOnWriteArrayList<String> D, CopyOnWriteArrayList<String> S,CopyOnWriteArrayList<String> AC, int numberOfSplits){
+
+		public diagThreads(List<String> D, List<String> S,List<String> AC,int numberOfSplits, ExecutorService executorService){
 			this.D=D;
 			this.S=S;
 			this.AC=AC;
-//			this.executorService=executorService;
-			this.numberOfSplits=numberOfSplits;	
-		
+			this.executorService=executorService;
+			this.numberOfSplits=numberOfSplits;
 			p.addVariables(chReasoner.getVars());
-		 }
-		
-		/*Each thread (instance of this class) presents values for its attributes D, S, and AC. 
-		 *(D + S) represents the set of rules to analyze; D and S are complementary, and S 
-		 *corresponds to the current solution set.
-		 *
-		 *At the start point of the call() method , always:
-		 *	- S represents the solution set.
-		 *	- D represents the complement set of S concerning the previous solution set.
-		 *	- AC represents the consistent rules of model C + the rules of S.  
-		 *
-		 *For the 1st thread always D is empty and S inconsistent. Then, AC is inconsistent.*/
-		
-		public CopyOnWriteArrayList<String> compute(){		
-        long threadId = Thread.currentThread().getId();
-        int paso=1;
-        
-		/*1st base case*/		
-		if (D.size() != 0 && isConsistent(AC, this)){	
-		   /*Since AC does not contain D, when D is not empty and AC is consistent, 
-		    *then D contains inconsistencies then D is analyzed to look for them*/
-	  	    return new CopyOnWriteArrayList<String>();				
 		}
 		
-		/*Since AC is non-consistent and D is not the inconsistencies source, then S is their source.
-		 *If this algorithmic solution is 'flexible' and the size of S is lesser or equal than m, then 
-		 *S is the looked inconsistencies set (m defines the solution flexibility to 
-		 *contains some consistent rules). 
-		 *
-		 *If this solution is not 'flexible' and S contains only one rule, then S is the looked inconsistent set*/
-		
-		/*2nd base case*/
-		if (S.size()==1){
-	    	   return S;
+		@Override
+		public List<String> call() throws Exception {
+			//System.out.println("Executando "+D+","+S+","+AC);
+			//if(!isConsistent(D)&&isConsistent(AC)){
+			this.consistencyDetails = 0;
+
+			if(isConsistent(AC, this)){
+				return new ArrayList<String>();
+			}
+			if(S.size()==1){
+				return S;
+			}
+			List<List<String>> outLists= new LinkedList<List<String>>();
+			//Hay una optimizacion a realizar si usamos algo m'as de memoria. Si almacenamos en un mapa los 
+			//resultados que tengamos siempre podemos volver a usar D=0 como hacen en el paper
+			List<List<String>> splitListToSubLists = splitListToSubLists(S, S.size()/this.numberOfSplits);
+			//System.out.println("Number of splits "+splitListToSubLists.size());
+
+			for(List<String> s: splitListToSubLists){
+				List<String> rest= getRest(s,splitListToSubLists);	
+				List<String> less = less(AC,rest);
+				diagThreads dt = new diagThreads(rest, s,less , numberOfSplits, executorService);
+				//System.out.println("Llamando "+rest+","+s+","+less);
+
+				Future<List<String>> submit = executorService.submit(dt);
+				outLists.add(submit.get());
+				
+			}
+			return plus(outLists);
 		}
 		
-		
-		/*outList corresponds to a results list for the threads of the solution*/
-		CopyOnWriteArrayList<CopyOnWriteArrayList<String>> outLists= 
-				new CopyOnWriteArrayList<CopyOnWriteArrayList<String>>();
-	
-		////*DIVISION PHASE*////
-		int div = 0; //div is the size of the partitions
-					
-		if (S.size() >= numberOfSplits){
-		   div = S.size() / numberOfSplits;
-		   if ((S.size() % numberOfSplits)>0)
-			   div++;
-		}
-		else 
-			div = 1;
-		
-		CopyOnWriteArrayList<CopyOnWriteArrayList<String>> splitListToSubLists = 
-				splitListToSubLists(S, div);
-		int actDiv = 0, maxDiv = splitListToSubLists.size();
-		
-		CopyOnWriteArrayList<RecursiveTask<CopyOnWriteArrayList<String>>> forks = new CopyOnWriteArrayList<>();
-		
-		////*CONQUER PHASE*////
-		int i = 1;
-		for(CopyOnWriteArrayList<String> s: splitListToSubLists){
-			/*For each partition 's', we define its complement 'rest' (AC - s) and  
-			 *the rules set 'less' (AC - rest). 
-			 *Then, a new thread 'dt' is defined with D=rest, S=s, and AC=less, 'dt' is run,
-			 *and its results are grouped in the results list*/ 		
-			if (actDiv == (maxDiv-1))
-				break;
-
-			CopyOnWriteArrayList<String> rest= getRest(s,splitListToSubLists);	
-			CopyOnWriteArrayList<String> less = less(AC,rest);
-
-			diagThreadsFJ dt = new diagThreadsFJ(rest, s, less , numberOfSplits);
-			dt.fork();
-			
-			forks.add(dt);
-			
-			if (actDiv < (maxDiv-1))
-				actDiv++;
-							
-			i++;
-		}
-
-		/*
-		int r=0, rr=-1;
-		for(RecursiveTask<CopyOnWriteArrayList<String>> subTask: forks){
-	       outLists.add(subTask.join());
-	       
-	       if (outLists.get(outLists.size()-1).isEmpty() && rr==-1)
-	    	   rr=r;
-	       
-	       r++;
-		}
-		*/
-
-		/*We save and return the union of the results of lists*/
-		CopyOnWriteArrayList<String> fullSolution1 = plus(outLists);
-
-		/*FMDiag 2nd call*/
-		CopyOnWriteArrayList<String> s = splitListToSubLists.get(actDiv);
-		CopyOnWriteArrayList<String> less = less(AC,fullSolution1);
-		
-		diagThreadsFJ dt = new diagThreadsFJ(fullSolution1, s, less, numberOfSplits);
-		dt.fork();
-		
-		outLists.add(dt.join());						
-		CopyOnWriteArrayList<String> fullSolution = plus(outLists);
-		
-		return fullSolution;
-	}
-		
-		private CopyOnWriteArrayList<String> getRest(CopyOnWriteArrayList<String> s2, CopyOnWriteArrayList<CopyOnWriteArrayList<String>> splitListToSubLists) {
-			CopyOnWriteArrayList<String> res= new CopyOnWriteArrayList<String>();
-
-			for(CopyOnWriteArrayList<String> c: splitListToSubLists){
+		private List<String> getRest(List<String> s2, List<List<String>> splitListToSubLists) {
+			LinkedList<String> res= new LinkedList<String>();
+			for(List<String> c:splitListToSubLists){
 				if(c!=s2){
 					res.addAll(c);
 				}
@@ -287,114 +213,103 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Ex
 			return res;
 		}
 
-		private CopyOnWriteArrayList<String> plus(CopyOnWriteArrayList<CopyOnWriteArrayList<String>> outLists) {
-			CopyOnWriteArrayList<String> res=new CopyOnWriteArrayList<String>();
-			for(List<String> s:outLists){	
+		private List<String> plus(List<List<String>> outLists) {
+			List<String> res=new ArrayList<String>();
+			for(List<String> s:outLists){
 				res.addAll(s);
 			}
-			return res;
-		}
+			return res;		}
 
-		public <T> CopyOnWriteArrayList<CopyOnWriteArrayList<T>> splitListToSubLists(
-				CopyOnWriteArrayList<T> parentList, int subListSize) {
-			
-		  CopyOnWriteArrayList<CopyOnWriteArrayList<T>> subLists = new CopyOnWriteArrayList<CopyOnWriteArrayList<T>>();
-		  
-		  if (subListSize > parentList.size()) {
-		     subLists.add(parentList);
-		     } 
-		  else {
-		     int remainingElements = parentList.size();
-		     int startIndex = 0;
-		     int endIndex = subListSize;
-		     do {
-		    	 List<T> subList =  parentList.subList(startIndex, endIndex);
-		         subLists.add(new CopyOnWriteArrayList<T>(subList));
-		         startIndex = endIndex;
-		        if (remainingElements - subListSize >= subListSize) {
-		           endIndex = startIndex + subListSize;
-		        } else {
-		           endIndex = startIndex + remainingElements - subList.size();
-		        }
-		        remainingElements -= subList.size();
-		     } while (remainingElements > 0);
+		public <T> List<List<T>> splitListToSubLists(List<T> parentList, int subListSize) {
+			  List<List<T>> subLists = new ArrayList<List<T>>();
+			  if (subListSize > parentList.size()) {
+			     subLists.add(parentList);
+			  } else {
+			     int remainingElements = parentList.size();
+			     int startIndex = 0;
+			     int endIndex = subListSize;
+			     do {
+			        List<T> subList = parentList.subList(startIndex, endIndex);
+			        subLists.add(subList);
+			        startIndex = endIndex;
+			        if (remainingElements - subListSize >= subListSize) {
+			           endIndex = startIndex + subListSize;
+			        } else {
+			           endIndex = startIndex + remainingElements - subList.size();
+			        }
+			        remainingElements -= subList.size();
+			     } while (remainingElements > 0);
 
-		  }
-		  return subLists;	
-		}
-   }
-
-	public <T> List<List<T>> splitListToSubLists(List<T> parentList, int subListSize) {
-		List<List<T>> subLists = new ArrayList<List<T>>();
-		  
-		if (subListSize > parentList.size()) {
-		   subLists.add(parentList);
-		 } 
-		else {
-		   int remainingElements = parentList.size();
-		   int startIndex = 0;
-		   int endIndex = subListSize;
-		   do {
-		      List<T> subList = parentList.subList(startIndex, endIndex);
-		      subLists.add(subList);
-		      startIndex = endIndex;
-		      if (remainingElements - subListSize >= subListSize) {
-		         endIndex = startIndex + subListSize;
-		      } else {
-		         endIndex = startIndex + remainingElements - subList.size();
-		      }
-		      remainingElements -= subList.size();
-		   } while (remainingElements > 0);
-
-		}
-		return subLists;
+			  }
+			  return subLists;
+		
 	}
-	
-	private CopyOnWriteArrayList<String> less(CopyOnWriteArrayList<String> aC, CopyOnWriteArrayList<String> s2) {
-		CopyOnWriteArrayList<String> res = new CopyOnWriteArrayList<String>();
-		res.addAll(aC);
-		res.removeAll(s2);
+//	public List<String> diag(List<String> D, List<String> S,List<String> AC){
+//		if(D.size()!=0&&isConsistent(AC)){
+//			return new ArrayList<String>();
+//		}
+//		if(S.size()==1){
+//			return S;
+//		}
+//		int k= S.size()/2;//here is where we paralelize
+//		List<String> S1=S.subList(0, k);
+//		List<String> S2=S.subList(k, S.size());
+//		List<String> A1=diag(S2,S1,less(AC,S2));
+//		List<String> A2=diag(A1,S2,less(AC,A1));
+//		return plus(A1,A2);
+//	}
+	}
+	private List<String> plus(List<String> a1, List<String> a2) {
+		List<String> res=new ArrayList<String>();
+		res.addAll(a1);
+		res.addAll(a2);
 		return res;
 	}
-	
+
+	private List<String> less(List<String> aC, List<String> s2) {
+		List<String> res=new ArrayList<String>();
+		res.addAll(aC);
+		res.removeAll(s2);
+		return res; 
+	}
+
 	private boolean isConsistent(Collection<String> aC) {
-   		CPModel p = new CPModel();
+		CPModel p = new CPModel();
 		p.addVariables(chReasoner.getVars()); 
-				   			   
-		for (String rel : aC) {
-		    Constraint c = relations.get(rel);
+	
+		for(String rel:aC){
+			Constraint c = relations.get(rel);
 
-		    if (c == null) {
-			    System.out.println("Error");
-			 }
-	        p.addConstraint(c);
-		   }
-
+			if(c==null){
+				System.out.println("Error");
+			}
+			p.addConstraint(c);
+		}
 		Solver s = new CPSolver();
 		s.read(p);
 		s.solve();
-
 		return s.isFeasible();
 	}
 
-	private boolean isConsistent(Collection<String> aC, diagThreadsFJ currentThread) {			
-	   CPModel p = currentThread.p;
-		   
-	   for (String rel : aC) {
-		   Constraint c = relations.get(rel);
 
-	  	   if (c == null) {
-			   System.out.println("Error");
-		   }
-		   p.addConstraint(c);
-	   }
+	private boolean isConsistent(Collection<String> aC, diagThreads currentThread) {
+        CPModel p = currentThread.p;
+	  
+    	for(String rel:aC){
+    		Constraint c = relations.get(rel);
 
-	   Solver s = new CPSolver();
-	   s.read(p);
-	   s.solve();
-
-	   return s.isFeasible();
+    		if(c==null){
+    			System.out.println("Error");
+    		}
+		
+    		p.addConstraint(c);
+    	}
+    	Solver s = new CPSolver();
+    	s.read(p);
+    	s.solve();
+    	return s.isFeasible(); 	    	
 	}
+
 
 	public void setErrors(Collection<Error> colErrors) {
 		this.errors= colErrors;
