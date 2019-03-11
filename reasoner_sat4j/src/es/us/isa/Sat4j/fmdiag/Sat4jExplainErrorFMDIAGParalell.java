@@ -1,8 +1,12 @@
-package es.us.isa.Choco.fmdiag.configuration;
+package es.us.isa.Sat4j.fmdiag;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -11,33 +15,36 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RecursiveTask;
 
-import choco.Choco;
-import choco.cp.model.CPModel;
-import choco.cp.solver.CPSolver;
-import choco.kernel.model.constraints.Constraint;
-import choco.kernel.model.variables.integer.IntegerVariable;
-import choco.kernel.solver.Solver;
-import es.us.isa.ChocoReasoner.ChocoQuestion;
-import es.us.isa.ChocoReasoner.ChocoReasoner;
-import es.us.isa.ChocoReasoner.ChocoResult;
+import org.sat4j.minisat.SolverFactory;
+import org.sat4j.reader.DimacsReader;
+import org.sat4j.reader.ParseFormatException;
+import org.sat4j.reader.Reader;
+import org.sat4j.specs.ContradictionException;
+import org.sat4j.specs.ISolver;
+import org.sat4j.specs.TimeoutException;
+
 import es.us.isa.FAMA.Benchmarking.PerformanceResult;
 import es.us.isa.FAMA.Exceptions.FAMAException;
 import es.us.isa.FAMA.Reasoner.Reasoner;
 import es.us.isa.FAMA.Reasoner.questions.ValidConfigurationErrorsQuestion;
 import es.us.isa.FAMA.models.featureModel.GenericFeature;
 import es.us.isa.FAMA.models.featureModel.Product;
+import es.us.isa.Sat4jReasoner.Sat4jQuestion;
+import es.us.isa.Sat4jReasoner.Sat4jReasoner;
+import es.us.isa.Sat4jReasoner.Sat4jResult;
 
-public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements ValidConfigurationErrorsQuestion {
+public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements ValidConfigurationErrorsQuestion {
 
 	public boolean returnAllPossibeExplanations = false;
-	private ChocoReasoner chReasoner;
+	public Map<String, String> result = new HashMap<String, String>();
 
-	Map<String, Constraint> relations = null;
+	Map<String, String> relations = null;
 	public boolean flexactive = false;
 	public int m = 1;
+	private Sat4jReasoner reasoner;
 
 	Product s, r;
-	public Map<String, Constraint> result = new HashMap<String, Constraint>();
+	//public Map<String, Constraint> result = new HashMap<String, Constraint>();
 
 	public void setConfiguration(Product s) {
 		this.s = s;
@@ -48,35 +55,39 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 	}
 
 	public int numberOfThreads = 4;
+	public int baseSize = 100;
 
 	public ExecutorService executorService;
 
-	public ChocoExplainErrorFMDIAGParalell(int m, int t) {
+	public Sat4jExplainErrorFMDIAGParalell(int m, int t) {
 		this.m = m;
 		this.numberOfThreads = t;
 	}
 	
 	public PerformanceResult answer(Reasoner r) throws FAMAException {
-		chReasoner = (ChocoReasoner) r;
+		reasoner = (Sat4jReasoner) r;
 		// solve the problem y fmdiag
-		relations = new HashMap<String, Constraint>();
+		relations = new HashMap<String, String>();
 
-		Map<String, Constraint> productConstraint = new HashMap<String, Constraint>();
+		Map<String, String> productConstraint = new HashMap<String, String>();
 		ArrayList<String> feats = new ArrayList<String>();
 		for (GenericFeature f : this.s.getFeatures()) {
-			IntegerVariable var = chReasoner.getVariables().get(f.getName());
+			String cnfVar = reasoner.getCNFVar(f.getName());
 			String name = "U_" + f.getName();
-			productConstraint.put(name, Choco.eq(var, 0));
+			productConstraint.put(name, "-"+cnfVar+" 0");
 			feats.add(name);
 		}
 
-		Map<String, Constraint> requirementConstraint = new HashMap<String, Constraint>();
+		Map<String, String> requirementConstraint = new HashMap<String, String>();
 		for (GenericFeature f : this.r.getFeatures()) {
-			IntegerVariable var = chReasoner.getVariables().get(f.getName());
-			requirementConstraint.put("R_" + f.getName(), Choco.eq(var, 1));
+			String cnfVar = reasoner.getCNFVar(f.getName());
+			requirementConstraint.put("R_" + f.getName(), cnfVar+" 0");
 		}
 
-		relations.putAll(chReasoner.getRelations());
+		int cindex= 0;
+		for(String cl:reasoner.clauses){
+			relations.put(cindex+"rel", cl);
+		}
 		relations.putAll(requirementConstraint);
 		relations.putAll(productConstraint);
 
@@ -107,7 +118,7 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 			}
 		}
 
-		return new ChocoResult();
+		return new Sat4jResult();
 	}
 
 	public CopyOnWriteArrayList<String> fmdiag(CopyOnWriteArrayList<String> S, CopyOnWriteArrayList<String> AC) {		// S is empty or (AC - S) non-consistent
@@ -116,7 +127,7 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 			return new CopyOnWriteArrayList<String>();
 		} else {
 			// (AC + S) is non-consistent
-			ForkJoinPool pool = ForkJoinPool.commonPool();//new ForkJoinPool(numberOfThreads);
+			ForkJoinPool pool = new ForkJoinPool(numberOfThreads);
 			diagThreadsFJ dt = new diagThreadsFJ(new CopyOnWriteArrayList<String>(), S, AC, numberOfThreads);
 		    dt.type = 1; dt.res=-1;
 		    
@@ -139,7 +150,6 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 		CopyOnWriteArrayList<String> D, S, AC;
 		int numberOfSplits;
 
-		CPModel p = new CPModel();
 		
 		Integer type; 
 		/*type 1 = main thread that can create other threads
@@ -160,7 +170,6 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 			this.AC = AC;
 			this.numberOfSplits = numberOfSplits;
 
-			p.addVariables(chReasoner.getVars());
 		}
 
 		/*
@@ -178,7 +187,7 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 
 		public CopyOnWriteArrayList<String> compute() {
 			/* 1st base case */
-			if (D.size() != 0 && isConsistent(AC, this)) {
+			if (D.size() != 0 && isConsistent(AC)) {
 				/*
 				 * Since AC does not contain D, when D is not empty and AC is consistent, then D
 				 * contains inconsistencies then D is analyzed to look for them
@@ -355,47 +364,46 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 	}
 
 	private boolean isConsistent(Collection<String> aC) {
-   		CPModel p = new CPModel();
-		p.addVariables(chReasoner.getVars()); 
-				   			   
-		for (String rel : aC) {
-		    Constraint c = relations.get(rel);
+   		
+		//First we create the content of the cnf
+		String cnf_content = "c CNF file\n";
 
-		    if (c == null) {
-			    System.out.println("Error");
-			 }
-	        p.addConstraint(c);
-		   }
+		// We show as comments the variables's number
+		Iterator<String> it = reasoner.variables.keySet().iterator();
+		while (it.hasNext()) {
+			String varName = it.next();
+			cnf_content += "c var " + reasoner.variables.get(varName) + " = " + varName
+					+ "\n";
+		}
 
-		Solver s = new CPSolver();
-		s.read(p);
-		s.solve();
+		// Start the problem
+		cnf_content += "p cnf " + reasoner.variables.size() + " " +  relations.values().size()
+				+ "\n";
+		// Clauses
+		it = relations.values().iterator();
+		while (it.hasNext()) {
+			cnf_content += (String) it.next() + "\n";
+		}
 
-		return s.isFeasible();
+		// End file
+		cnf_content += "0";
+		ByteArrayInputStream stream= new ByteArrayInputStream(cnf_content.getBytes(StandardCharsets.UTF_8));
+		
+		
+		
+		ISolver s = SolverFactory.newDefault();
+		Reader reader = new DimacsReader(s);
+		try {
+			reader.parseInstance(stream);
+			return s.isSatisfiable();
+		} catch (TimeoutException | ParseFormatException | ContradictionException | IOException e) {
+			e.printStackTrace();
+			
+		}
+		return false;
 	}
 	
-	private boolean isConsistent(Collection<String> aC, diagThreadsFJ currentThread) {			
-		   CopyOnWriteArrayList<Constraint> cons= new CopyOnWriteArrayList<Constraint>();
-		   for (String rel : aC) {
-			   Constraint c = relations.get(rel);
-
-		  	   if (c == null) {
-				   System.out.println("Error");
-			   }
-			   cons.add(c);
-		   }
-
-		   CPModel p = currentThread.p;
-
-		   p.addConstraints(cons.toArray(new Constraint[cons.size()]));
-		   Solver s = new CPSolver();
-		   s.read(p);
-		   s.solve();
-
-		   return s.isFeasible();
-		}
-	
-	@Override
+		@Override
 	public void setProduct(Product p) {
 		// TODO Auto-generated method stub
 		

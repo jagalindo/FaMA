@@ -27,6 +27,7 @@ import es.us.isa.FAMA.Reasoner.questions.ExplainErrorsQuestion;
 import es.us.isa.FAMA.errors.Error;
 import es.us.isa.FAMA.errors.Observation;
 import es.us.isa.FAMA.models.featureModel.GenericFeature;
+import es.us.isa.FAMA.models.featureModel.Product;
 import es.us.isa.FAMA.models.variabilityModel.VariabilityElement;
 import es.us.isa.Sat4jReasoner.Sat4jQuestion;
 import es.us.isa.Sat4jReasoner.Sat4jReasoner;
@@ -42,16 +43,27 @@ public class Sat4jExplainErrorFMDIAG extends Sat4jQuestion implements
 	Collection<Error> errors;
 	Map<String, String> relations =null;
 
-	
+	Product s, r;
+
+	public void setConfiguration(Product s) {
+		this.s = s;
+	}
+
+	public void setRequirement(Product r) {
+		this.r = r;
+	}
+
 	public PerformanceResult answer(Reasoner r) throws FAMAException {
 		
 		Sat4jResult res = new Sat4jResult();
 		reasoner = (Sat4jReasoner) r;
 
+		/*
 		if ((errors == null) || errors.isEmpty()) {
 			errors = new LinkedList<Error>();
 			return res;
 		}
+		
 		
 		Iterator<Error> itE = this.errors.iterator();
 
@@ -89,18 +101,41 @@ public class Sat4jExplainErrorFMDIAG extends Sat4jQuestion implements
 				}
 			}
 			
+			*/
 			//solve the problem  y fmdiag
+
+			// solve the problem y fmdiag
 			relations = new HashMap<String, String>();
-			relations.putAll(cons4obs);
+
+			Map<String, String> productConstraint = new HashMap<String, String>();
+			ArrayList<String> feats = new ArrayList<String>();
+			for (GenericFeature f : this.s.getFeatures()) {
+				String cnfVar = reasoner.getCNFVar(f.getName());
+				String name = "U_" + f.getName();
+				productConstraint.put(name, "-"+cnfVar+" 0");
+				feats.add(name);
+			}
+
+			Map<String, String> requirementConstraint = new HashMap<String, String>();
+			for (GenericFeature f : this.r.getFeatures()) {
+				String cnfVar = reasoner.getCNFVar(f.getName());
+				requirementConstraint.put("R_" + f.getName(), cnfVar+" 0");
+			}
+
 			int cindex= 0;
 			for(String cl:reasoner.clauses){
 				relations.put(cindex+"rel", cl);
 			}
+			relations.putAll(requirementConstraint);
+			relations.putAll(productConstraint);
+			
+			
+			
 			ArrayList<String> S = reasoner.clauses;		
 			ArrayList<String> AC = new ArrayList<String>(relations.keySet());
 			if(returnAllPossibeExplanations==false){
 				List<String> fmdiag = fmdiag(S,AC);
-				System.out.println("Relation "+fmdiag.get(0)+" is causing the conflict");
+			//	System.out.println("Relation "+fmdiag.get(0)+" is causing the conflict");
 				explanations=fmdiag;
 			}else{
 				List<String> allExpl= new LinkedList<String>();
@@ -112,15 +147,15 @@ public class Sat4jExplainErrorFMDIAG extends Sat4jQuestion implements
 					fmdiag = fmdiag(S,AC);
 				}
 				explanations=fmdiag;
-				for(String str:allExpl){
-					System.out.println("Relation "+str+" is causing the conflict");
-				}
+//				for(String str:allExpl){
+//					System.out.println("Relation "+str+" is causing the conflict");
+//				}
 			}
-	
-		}
-		return res;
+			return null;
 
-	}
+		}
+	
+	
 	
 	public List<String> fmdiag(List<String> S,List<String> AC){
 		if(S.size()==0||!isConsistent(less(AC,S))){
@@ -174,7 +209,7 @@ public class Sat4jExplainErrorFMDIAG extends Sat4jQuestion implements
 		}
 
 		// Start the problem
-		cnf_content += "p cnf " + reasoner.variables.size() + " " + (-1+ relations.values().size())
+		cnf_content += "p cnf " + reasoner.variables.size() + " " + (relations.values().size())
 				+ "\n";
 		// Clauses
 		it = relations.values().iterator();
