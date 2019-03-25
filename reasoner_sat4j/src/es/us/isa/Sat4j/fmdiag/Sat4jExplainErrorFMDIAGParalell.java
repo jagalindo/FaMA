@@ -235,8 +235,9 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 
 			if (S.size() >= numberOfSplits) {
 				div = S.size() / numberOfSplits;
-				if ((S.size() % numberOfSplits) > 0)
+				if ((S.size() % numberOfSplits) > 0) {
 					div++;
+				}
 			} else
 				div = 1;
 
