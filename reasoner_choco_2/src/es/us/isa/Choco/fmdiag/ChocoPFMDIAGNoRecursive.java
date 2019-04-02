@@ -201,6 +201,8 @@ public class ChocoPFMDIAGNoRecursive extends ChocoQuestion implements ValidConfi
 			}
 			
 			if (firstParallelization){
+				firstParallelization=false;
+
 				/*outList corresponds to a results list for the threads of the solution*/
 				CopyOnWriteArrayList<CopyOnWriteArrayList<String>> outLists= 
 						new CopyOnWriteArrayList<CopyOnWriteArrayList<String>>();

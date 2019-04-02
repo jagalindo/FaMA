@@ -208,6 +208,8 @@ public class SATPFMDIAGNoRecursive extends Sat4jQuestion implements ValidConfigu
 			}
 			
 			if (firstParallelization){
+				firstParallelization=false;
+
 				/*outList corresponds to a results list for the threads of the solution*/
 				CopyOnWriteArrayList<CopyOnWriteArrayList<String>> outLists= 
 						new CopyOnWriteArrayList<CopyOnWriteArrayList<String>>();
