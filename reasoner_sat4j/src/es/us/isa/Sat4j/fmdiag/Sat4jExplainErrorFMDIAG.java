@@ -44,26 +44,17 @@ public class Sat4jExplainErrorFMDIAG extends Sat4jQuestion implements
 	public boolean flexactive = false;
 	public int m = 1;
 
-	Product s,r;
-	public Map<String, String> result = new HashMap<String, String>();
+
+	Product s, r;
 
 	public void setConfiguration(Product s) {
-		this.s=s;
+		this.s = s;
 	}
 
 	public void setRequirement(Product r) {
-		this.r=r;
+		this.r = r;
 	}
-	
-	
-	public int numberOfThreads = 2;
-	public int baseSize = 100;
 
-	public Sat4jExplainErrorFMDIAG(){
-		this.m = 1;
-	}
-	
-	//
 	public PerformanceResult answer(Reasoner r) throws FAMAException {
 		reasoner = (Sat4jReasoner) r;
 		// solve the problem y fmdiag
@@ -78,48 +69,56 @@ public class Sat4jExplainErrorFMDIAG extends Sat4jQuestion implements
 			feats.add(name);
 		}
 
-		Map<String, String> requirementConstraint = new HashMap<String, String>();
-		for (GenericFeature f : this.r.getFeatures()) {
-			String cnfVar = reasoner.getCNFVar(f.getName());
-			requirementConstraint.put("R_" + f.getName(), cnfVar+" 0");
-		}
+			relations = new HashMap<String, String>();
 
-		int cindex= 0;
-		for(String cl:reasoner.clauses){
-			relations.put(cindex+"rel", cl);
-		}
-		relations.putAll(requirementConstraint);
-		relations.putAll(productConstraint);
-
-		//The use of this class is to force synced lists
-		CopyOnWriteArrayList<String> S = new CopyOnWriteArrayList<String>(feats);
-		CopyOnWriteArrayList<String> AC = new CopyOnWriteArrayList<String>(relations.keySet());
-
-		if (returnAllPossibeExplanations == false) {
-
-			List<String> fmdiag = fmdiag(S, AC);
-
-			for (String s : fmdiag) {
-				result.put(s, productConstraint.get(s));
+			Map<String, String> productConstraint = new HashMap<String, String>();
+			ArrayList<String> feats = new ArrayList<String>();
+			for (GenericFeature f : this.s.getFeatures()) {
+				String cnfVar = reasoner.getCNFVar(f.getName());
+				String name = "U_" + f.getName();
+				productConstraint.put(name, "-"+cnfVar+" 0");
+				feats.add(name);
 			}
 
-		} else {
-			List<String> allExpl = new LinkedList<String>();
-			List<String> fmdiag = fmdiag(S, AC);
+			Map<String, String> requirementConstraint = new HashMap<String, String>();
+			for (GenericFeature f : this.r.getFeatures()) {
+				String cnfVar = reasoner.getCNFVar(f.getName());
+				requirementConstraint.put("R_" + f.getName(), cnfVar+" 0");
+			}
 
-			while (fmdiag.size() != 0) {
-				allExpl.addAll(fmdiag);
-				S.removeAll(fmdiag);
-				AC.removeAll(fmdiag);
-				fmdiag = fmdiag(S, AC);
+			int cindex= 0;
+			for(String cl:reasoner.clauses){
+				relations.put(cindex+"rel", cl);
 			}
-			for (String s : allExpl) {
-				result.put(s, productConstraint.get(s));
+			relations.putAll(requirementConstraint);
+			relations.putAll(productConstraint);
+			
+			
+			
+			ArrayList<String> S = reasoner.clauses;		
+			ArrayList<String> AC = new ArrayList<String>(relations.keySet());
+			if(returnAllPossibeExplanations==false){
+				List<String> fmdiag = fmdiag(S,AC);
+			//	System.out.println("Relation "+fmdiag.get(0)+" is causing the conflict");
+				explanations=fmdiag;
+			}else{
+				List<String> allExpl= new LinkedList<String>();
+				List<String> fmdiag = fmdiag(S,AC);
+				while(fmdiag.size()!=0){
+					allExpl.addAll(fmdiag);
+					S.removeAll(fmdiag);
+					AC.removeAll(fmdiag);
+					fmdiag = fmdiag(S,AC);
+				}
+				explanations=fmdiag;
+//				for(String str:allExpl){
+//					System.out.println("Relation "+str+" is causing the conflict");
+//				}
 			}
+			return null;
+
 		}
-
-		return new Sat4jResult();
-	}
+	
 	
 	
 	public List<String> fmdiag(List<String> S,List<String> AC){

@@ -28,7 +28,7 @@ import es.us.isa.Sat4jReasoner.Sat4jQuestion;
 import es.us.isa.Sat4jReasoner.Sat4jReasoner;
 import es.us.isa.Sat4jReasoner.Sat4jResult;
 
-public class ChocoDetectRedundanciesFMCORE extends Sat4jQuestion implements
+public class DetectRedundanciesFMCORE extends Sat4jQuestion implements
 		DetectRedundanciesQuestion {
 
 	private Sat4jReasoner chReasoner;

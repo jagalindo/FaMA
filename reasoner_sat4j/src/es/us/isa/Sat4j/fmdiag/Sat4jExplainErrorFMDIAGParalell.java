@@ -59,9 +59,9 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 
 	public ExecutorService executorService;
 
-	public Sat4jExplainErrorFMDIAGParalell(int t) {
-		this.m = 1;
-		this.numberOfThreads = t;
+	public Sat4jExplainErrorFMDIAGParalell(int m, int t) {
+	  this.m = m;
+    this.numberOfThreads = t;
 	}
 	
 	public PerformanceResult answer(Reasoner r) throws FAMAException {
@@ -152,14 +152,15 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 
 		
 		Integer type; 
-		/*type 1 = thread that can create other threads
-		  type 2 = thread to review base cases only
+		/*type 1 = main thread that can create other threads
+
+    type 2 = thread to review base cases only
 		*/
 				
 		Integer res; 
 		/*res 1 = base case 1
 		  res 2 = base case 2
-		  res 3 = no solution (type 2 thread)
+		  res 2 = no solution (type 2 thread)
 		*/
 		
 
@@ -186,22 +187,43 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 		 */
 
 		public CopyOnWriteArrayList<String> compute() {
-			/* 1st base case: If AC does not contain S, 
-			 * when D is not empty and AC is consistent,
-			   then D contains inconsistencies.*/
+			/* 1st base case */
 			if (D.size() != 0 && isConsistent(AC)) {
+				/*
+				 * Since AC does not contain D, when D is not empty and AC is consistent, then D
+				 * contains inconsistencies then D is analyzed to look for them
+				 */
 				this.res = 1;
+
 				return new CopyOnWriteArrayList<String>();
 			}
 
-			/* 2nd base case: S is a minimal inconsistencies source*/
-			if (S.size() == 1) {
-				this.res = 2;
-				return S;
+			/*
+			 * Since AC is non-consistent and D is not the inconsistencies source, then S is
+			 * their source. If this algorithmic solution is 'flexible' and the size of S is
+			 * lesser or equal than m, then S is the looked inconsistencies set (m defines
+			 * the solution flexibility to contains some consistent rules).
+			 *
+			 * If this solution is not 'flexible' and S contains only one rule, then S is
+			 * the looked inconsistent set
+			 */
+
+			/* 2nd base case */
+			if (flexactive) {
+				if (S.size() <= m) {
+					this.res = 2;
+
+					return S;
+				}
+			} else {
+				if (S.size() == 1) {
+					this.res = 2;
+
+					return S;
+				}
 			}
-			
-			/*3rd base case: no previous base cases (main labor)*/
-			if (this.type==2){ 
+
+			if (this.type==2){ /*3rdbase case - type 2 and no solution*/
 				this.res=3;
 				return new CopyOnWriteArrayList<String>();
 			}
@@ -228,23 +250,21 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 			CopyOnWriteArrayList<CopyOnWriteArrayList<String>> less = new CopyOnWriteArrayList<CopyOnWriteArrayList<String>>();
 			CopyOnWriteArrayList<diagThreadsFJ> threads = new CopyOnWriteArrayList<diagThreadsFJ>();	
 			
-			/*S and its partitions are ordered by preference
-			 *Loop from the most preferred partition to the less relevant*/
 			int j=0;
 			for(int i = splitListToSubLists.size()-1; i>=0; i--){
-				/* 
-				 * s is the current partition of S.
-				 * rest is the complement of s (S - s)  
-				 * less is AC without s (AC - s).
-				 */		
-				CopyOnWriteArrayList<String> s = splitListToSubLists.get(i);	
-				rest.add(getRest(s,splitListToSubLists));
+				CopyOnWriteArrayList<String> s = splitListToSubLists.get(i);	//S	
+				/*
+				 * For each partition 's', we define its complement 'rest' (AC - s) and the
+				 * rules set 'less' (AC - s). Then, a new thread 'dt' is defined with D = s,
+				 * S = rest, and AC = less, 'dt' is run, and its results are grouped in the results
+				 * list
+				 */
+				rest.add(getRest(s,splitListToSubLists));	//D
 				less.add(less(AC,s));
 				
-				/* 
-				 * dt is a new thread with: D = s, S = rest, AC = less
-				 * */
-				diagThreadsFJ dt = new diagThreadsFJ(s, rest.get(j), less.get(j) , this.numberOfSplits); 
+				/*a new thread to define if it can directly find the preferred inconsistency*/
+
+        diagThreadsFJ dt = new diagThreadsFJ(s, rest.get(j), less.get(j) , this.numberOfSplits); 
 				dt.type = 2; 
 				threads.add(dt);
 				
@@ -253,39 +273,36 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 				j++;
 			}
 
-			/*
-			 *Looking for the most preferred diagnosis in each thread's results. 
-			 *
-			 *posZero: 1st thread that knows its "s" is the inconsistencies source.
-			 *posWinner: 1st thread that founds its "s" is a minimal inconsistencies source.
-			  */			
-			int i=0; Integer posZero=-1, posWinner=-1;
+			/*The results are take for each created thread!
+			 looking for the preferred diagnosis. 
+			 If some thread found a diagnosis(they are obtained in a preferred order),
+			 that thread is the winner (siblings and nephews threads possibly return)..*/
+			int i=0; Boolean sw=false; Integer posZero=-1;
+
 			for(RecursiveTask<CopyOnWriteArrayList<String>> subTask: forks){
 				CopyOnWriteArrayList<String> rr = subTask.join();
 				
-				if (threads.get(i).res != 3){ //thread found a 'base case', i.e., that thread can find or found a solution  
+				if (rr.size()>=0 && !sw && threads.get(i).res != 3){ //thread found a 'base case', i.e., that thread can find or found a solution  
 					outLists.add(rr);
-					
 					if (rr.size() > 0 && posZero==-1){ //if that thread is the first discovering a solution 
-						posZero = -1;  posWinner = i;  //thread is the winner
+						posZero = -1; sw=true; //thread is the winner
 					}else if (posZero==-1)
-						posZero=i;		
-					
-					break; //always we select the most preferred diagnosis!
+						posZero=i;
 				}
 				
 				i++;
 			}
 
-			/*Does a winner exist? If no, a preferred set exits that contains
-			  the most preferred diagnosis. We look on that set!*/
-			if (posWinner == -1){
-				this.D = outLists.get(posZero);
-				this.S = splitListToSubLists.get(splitListToSubLists.size()-1-posZero);
-				this.AC = less(AC, outLists.get(posZero));
-				this.type = 1;
-				
-				return compute();				
+			//if no thread directly found a solution, we choose the one that work on the preferred set for diagnosis 
+			if (posZero != -1){
+				/*FMDiag 2nd call*/
+				CopyOnWriteArrayList<String> s = splitListToSubLists.get(splitListToSubLists.size()-1-posZero);
+				CopyOnWriteArrayList<String> acc = less(AC, outLists.get(posZero));
+				diagThreadsFJ dt = new diagThreadsFJ(outLists.get(posZero), s, acc, numberOfSplits);
+				dt.type = 1;  
+						
+				dt.fork();
+				outLists.add(dt.join());						
 			}
 			
 			CopyOnWriteArrayList<String> fullSolution = plus(outLists);

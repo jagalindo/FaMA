@@ -17,7 +17,6 @@ import choco.cp.solver.CPSolver;
 import choco.kernel.model.constraints.Constraint;
 import choco.kernel.model.variables.integer.IntegerVariable;
 import choco.kernel.solver.Solver;
-import es.us.isa.Choco.fmdiag.configuration.ChocoExplainErrorFMDIAGParalellExecutor.diagThreads;
 import es.us.isa.ChocoReasoner.ChocoQuestion;
 import es.us.isa.ChocoReasoner.ChocoReasoner;
 import es.us.isa.ChocoReasoner.ChocoResult;
@@ -49,14 +48,14 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 	}
 
 	public int numberOfThreads = 4;
-	public int baseSize = 100;
 
 	public ExecutorService executorService;
 
 	public ChocoExplainErrorFMDIAGParalell(int m, int t) {
 		this.m = m;
 		this.numberOfThreads = t;
-
+	}
+	
 	public PerformanceResult answer(Reasoner r) throws FAMAException {
 		chReasoner = (ChocoReasoner) r;
 		// solve the problem y fmdiag
@@ -238,7 +237,7 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 			////*CONQUER PHASE*////		
 			CopyOnWriteArrayList<CopyOnWriteArrayList<String>> rest = new CopyOnWriteArrayList<CopyOnWriteArrayList<String>>();
 			CopyOnWriteArrayList<CopyOnWriteArrayList<String>> less = new CopyOnWriteArrayList<CopyOnWriteArrayList<String>>();
-		    ArrayList<diagThreadsFJ> threads = new ArrayList<diagThreadsFJ>();	
+			CopyOnWriteArrayList<diagThreadsFJ> threads = new CopyOnWriteArrayList<diagThreadsFJ>();	
 			
 			int j=0;
 			for(int i = splitListToSubLists.size()-1; i>=0; i--){
@@ -376,17 +375,19 @@ public class ChocoExplainErrorFMDIAGParalell extends ChocoQuestion implements Va
 	}
 	
 	private boolean isConsistent(Collection<String> aC, diagThreadsFJ currentThread) {			
-		   CPModel p = currentThread.p;
-		   
+		   CopyOnWriteArrayList<Constraint> cons= new CopyOnWriteArrayList<Constraint>();
 		   for (String rel : aC) {
 			   Constraint c = relations.get(rel);
 
 		  	   if (c == null) {
 				   System.out.println("Error");
 			   }
-			   p.addConstraint(c);
+			   cons.add(c);
 		   }
 
+		   CPModel p = currentThread.p;
+
+		   p.addConstraints(cons.toArray(new Constraint[cons.size()]));
 		   Solver s = new CPSolver();
 		   s.read(p);
 		   s.solve();

@@ -248,16 +248,16 @@ public class ChocoReasoner extends AttributedFeatureModelReasoner {
 					while (itRanges.hasNext()) {
 						Range r = itRanges.next();
 						if (r.getMin() < min) {
-							min = r.getMin();
+							min = ((Float) r.getMinFloat()).intValue();
 						}
 						if (r.getMax() > max) {
-							max = r.getMax();
+							max = ((Float) r.getMaxFloat()).intValue();
 						}
 					}
 
-					if (intNullVal > max) {
+					if (intNullVal >= max) {
 						max = intNullVal;
-					} else if (intNullVal < min) {
+					} else if (intNullVal <= min) {
 						min = intNullVal;
 					}
 					// creamos la vble con el rango
