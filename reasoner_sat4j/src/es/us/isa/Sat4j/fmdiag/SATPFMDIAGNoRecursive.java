@@ -370,33 +370,30 @@ public class SATPFMDIAGNoRecursive extends Sat4jQuestion implements ValidConfigu
 	
 
 	private boolean isConsistent(Collection<String> aC) {
-   		
-		//First we create the content of the cnf
+
+		// First we create the content of the cnf
 		String cnf_content = "c CNF file\n";
 
 		// We show as comments the variables's number
 		Iterator<String> it = reasoner.variables.keySet().iterator();
 		while (it.hasNext()) {
 			String varName = it.next();
-			cnf_content += "c var " + reasoner.variables.get(varName) + " = " + varName
-					+ "\n";
+			cnf_content += "c var " + reasoner.variables.get(varName) + " = " + varName + "\n";
 		}
 
 		// Start the problem
-		cnf_content += "p cnf " + reasoner.variables.size() + " " +  relations.values().size()
-				+ "\n";
+		cnf_content += "p cnf " + reasoner.variables.size() + " " + (aC.size()) + "\n";
 		// Clauses
-		it = relations.values().iterator();
-		while (it.hasNext()) {
-			cnf_content += (String) it.next() + "\n";
+		for(String cons:aC) {
+			cnf_content += (String) relations.get(cons) + "\n";
+			
 		}
+	
 
 		// End file
 		cnf_content += "0";
-		ByteArrayInputStream stream= new ByteArrayInputStream(cnf_content.getBytes(StandardCharsets.UTF_8));
-		
-		
-		
+		ByteArrayInputStream stream = new ByteArrayInputStream(cnf_content.getBytes(StandardCharsets.UTF_8));
+
 		ISolver s = SolverFactory.newDefault();
 		Reader reader = new DimacsReader(s);
 		try {
@@ -404,9 +401,10 @@ public class SATPFMDIAGNoRecursive extends Sat4jQuestion implements ValidConfigu
 			return s.isSatisfiable();
 		} catch (TimeoutException | ParseFormatException | ContradictionException | IOException e) {
 			e.printStackTrace();
-			
+
 		}
 		return false;
+
 	}
 	
 

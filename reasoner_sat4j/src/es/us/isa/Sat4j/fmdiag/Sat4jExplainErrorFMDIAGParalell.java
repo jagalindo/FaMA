@@ -44,7 +44,7 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 	private Sat4jReasoner reasoner;
 
 	Product s, r;
-	//public Map<String, Constraint> result = new HashMap<String, Constraint>();
+	// public Map<String, Constraint> result = new HashMap<String, Constraint>();
 
 	public void setConfiguration(Product s) {
 		this.s = s;
@@ -60,10 +60,10 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 	public ExecutorService executorService;
 
 	public Sat4jExplainErrorFMDIAGParalell(int m, int t) {
-	  this.m = m;
-    this.numberOfThreads = t;
+		this.m = m;
+		this.numberOfThreads = t;
 	}
-	
+
 	public PerformanceResult answer(Reasoner r) throws FAMAException {
 		reasoner = (Sat4jReasoner) r;
 		// solve the problem y fmdiag
@@ -74,24 +74,24 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 		for (GenericFeature f : this.s.getFeatures()) {
 			String cnfVar = reasoner.getCNFVar(f.getName());
 			String name = "U_" + f.getName();
-			productConstraint.put(name, "-"+cnfVar+" 0");
+			productConstraint.put(name, "-" + cnfVar + " 0");
 			feats.add(name);
 		}
 
 		Map<String, String> requirementConstraint = new HashMap<String, String>();
 		for (GenericFeature f : this.r.getFeatures()) {
 			String cnfVar = reasoner.getCNFVar(f.getName());
-			requirementConstraint.put("R_" + f.getName(), cnfVar+" 0");
+			requirementConstraint.put("R_" + f.getName(), cnfVar + " 0");
 		}
 
-		int cindex= 0;
-		for(String cl:reasoner.clauses){
-			relations.put(cindex+"rel", cl);
+		int cindex = 0;
+		for (String cl : reasoner.clauses) {
+			relations.put(cindex + "rel", cl);
 		}
 		relations.putAll(requirementConstraint);
 		relations.putAll(productConstraint);
 
-		//The use of this class is to force synced lists
+		// The use of this class is to force synced lists
 		CopyOnWriteArrayList<String> S = new CopyOnWriteArrayList<String>(feats);
 		CopyOnWriteArrayList<String> AC = new CopyOnWriteArrayList<String>(relations.keySet());
 
@@ -121,7 +121,14 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 		return new Sat4jResult();
 	}
 
-	public CopyOnWriteArrayList<String> fmdiag(CopyOnWriteArrayList<String> S, CopyOnWriteArrayList<String> AC) {		// S is empty or (AC - S) non-consistent
+	public CopyOnWriteArrayList<String> fmdiag(CopyOnWriteArrayList<String> S, CopyOnWriteArrayList<String> AC) { // S
+																													// is
+																													// empty
+																													// or
+																													// (AC
+																													// -
+																													// S)
+																													// non-consistent
 		// S is empty or (AC - S) non-consistent
 		if (S.size() == 0 || !isConsistent(less(AC, S))) {
 			return new CopyOnWriteArrayList<String>();
@@ -129,40 +136,38 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 			// (AC + S) is non-consistent
 			ForkJoinPool pool = new ForkJoinPool(numberOfThreads);
 			diagThreadsFJ dt = new diagThreadsFJ(new CopyOnWriteArrayList<String>(), S, AC, numberOfThreads);
-		    dt.type = 1; dt.res=-1;
-		    
+			dt.type = 1;
+			dt.res = -1;
+
 			CopyOnWriteArrayList<String> solution = pool.invoke(dt);
 			return solution;
 		}
 	}
 
-	
 	private CopyOnWriteArrayList<String> less(CopyOnWriteArrayList<String> aC, CopyOnWriteArrayList<String> s2) {
 		CopyOnWriteArrayList<String> res = new CopyOnWriteArrayList<String>();
 		res.addAll(aC);
 		res.removeAll(s2);
 		return res;
 	}
-	
+
 	public class diagThreadsFJ extends RecursiveTask<CopyOnWriteArrayList<String>> {
 		private static final long serialVersionUID = 1L;
-		
+
 		CopyOnWriteArrayList<String> D, S, AC;
 		int numberOfSplits;
 
-		
-		Integer type; 
-		/*type 1 = main thread that can create other threads
+		Integer type;
+		/*
+		 * type 1 = main thread that can create other threads
+		 * 
+		 * type 2 = thread to review base cases only
+		 */
 
-    type 2 = thread to review base cases only
-		*/
-				
-		Integer res; 
-		/*res 1 = base case 1
-		  res 2 = base case 2
-		  res 2 = no solution (type 2 thread)
-		*/
-		
+		Integer res;
+		/*
+		 * res 1 = base case 1 res 2 = base case 2 res 2 = no solution (type 2 thread)
+		 */
 
 		public diagThreadsFJ(CopyOnWriteArrayList<String> D, CopyOnWriteArrayList<String> S,
 				CopyOnWriteArrayList<String> AC, int numberOfSplits) {
@@ -223,8 +228,8 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 				}
 			}
 
-			if (this.type==2){ /*3rdbase case - type 2 and no solution*/
-				this.res=3;
+			if (this.type == 2) { /* 3rdbase case - type 2 and no solution */
+				this.res = 3;
 				return new CopyOnWriteArrayList<String>();
 			}
 
@@ -245,66 +250,73 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 			CopyOnWriteArrayList<CopyOnWriteArrayList<String>> splitListToSubLists = splitListToSubLists(S, div);
 			CopyOnWriteArrayList<RecursiveTask<CopyOnWriteArrayList<String>>> forks = new CopyOnWriteArrayList<>();
 
-			////*CONQUER PHASE*////		
+			//// *CONQUER PHASE*////
 			CopyOnWriteArrayList<CopyOnWriteArrayList<String>> rest = new CopyOnWriteArrayList<CopyOnWriteArrayList<String>>();
 			CopyOnWriteArrayList<CopyOnWriteArrayList<String>> less = new CopyOnWriteArrayList<CopyOnWriteArrayList<String>>();
-			CopyOnWriteArrayList<diagThreadsFJ> threads = new CopyOnWriteArrayList<diagThreadsFJ>();	
-			
-			int j=0;
-			for(int i = splitListToSubLists.size()-1; i>=0; i--){
-				CopyOnWriteArrayList<String> s = splitListToSubLists.get(i);	//S	
+			CopyOnWriteArrayList<diagThreadsFJ> threads = new CopyOnWriteArrayList<diagThreadsFJ>();
+
+			int j = 0;
+			for (int i = splitListToSubLists.size() - 1; i >= 0; i--) {
+				CopyOnWriteArrayList<String> s = splitListToSubLists.get(i); // S
 				/*
 				 * For each partition 's', we define its complement 'rest' (AC - s) and the
-				 * rules set 'less' (AC - s). Then, a new thread 'dt' is defined with D = s,
-				 * S = rest, and AC = less, 'dt' is run, and its results are grouped in the results
+				 * rules set 'less' (AC - s). Then, a new thread 'dt' is defined with D = s, S =
+				 * rest, and AC = less, 'dt' is run, and its results are grouped in the results
 				 * list
 				 */
-				rest.add(getRest(s,splitListToSubLists));	//D
-				less.add(less(AC,s));
-				
-				/*a new thread to define if it can directly find the preferred inconsistency*/
+				rest.add(getRest(s, splitListToSubLists)); // D
+				less.add(less(AC, s));
 
-        diagThreadsFJ dt = new diagThreadsFJ(s, rest.get(j), less.get(j) , this.numberOfSplits); 
-				dt.type = 2; 
+				/* a new thread to define if it can directly find the preferred inconsistency */
+
+				diagThreadsFJ dt = new diagThreadsFJ(s, rest.get(j), less.get(j), this.numberOfSplits);
+				dt.type = 2;
 				threads.add(dt);
-				
+
 				dt.fork();
 				forks.add(dt);
 				j++;
 			}
 
-			/*The results are take for each created thread!
-			 looking for the preferred diagnosis. 
-			 If some thread found a diagnosis(they are obtained in a preferred order),
-			 that thread is the winner (siblings and nephews threads possibly return)..*/
-			int i=0; Boolean sw=false; Integer posZero=-1;
+			/*
+			 * The results are take for each created thread! looking for the preferred
+			 * diagnosis. If some thread found a diagnosis(they are obtained in a preferred
+			 * order), that thread is the winner (siblings and nephews threads possibly
+			 * return)..
+			 */
+			int i = 0;
+			Boolean sw = false;
+			Integer posZero = -1;
 
-			for(RecursiveTask<CopyOnWriteArrayList<String>> subTask: forks){
+			for (RecursiveTask<CopyOnWriteArrayList<String>> subTask : forks) {
 				CopyOnWriteArrayList<String> rr = subTask.join();
-				
-				if (rr.size()>=0 && !sw && threads.get(i).res != 3){ //thread found a 'base case', i.e., that thread can find or found a solution  
+
+				if (rr.size() >= 0 && !sw && threads.get(i).res != 3) { // thread found a 'base case', i.e., that thread
+																		// can find or found a solution
 					outLists.add(rr);
-					if (rr.size() > 0 && posZero==-1){ //if that thread is the first discovering a solution 
-						posZero = -1; sw=true; //thread is the winner
-					}else if (posZero==-1)
-						posZero=i;
+					if (rr.size() > 0 && posZero == -1) { // if that thread is the first discovering a solution
+						posZero = -1;
+						sw = true; // thread is the winner
+					} else if (posZero == -1)
+						posZero = i;
 				}
-				
+
 				i++;
 			}
 
-			//if no thread directly found a solution, we choose the one that work on the preferred set for diagnosis 
-			if (posZero != -1){
-				/*FMDiag 2nd call*/
-				CopyOnWriteArrayList<String> s = splitListToSubLists.get(splitListToSubLists.size()-1-posZero);
+			// if no thread directly found a solution, we choose the one that work on the
+			// preferred set for diagnosis
+			if (posZero != -1) {
+				/* FMDiag 2nd call */
+				CopyOnWriteArrayList<String> s = splitListToSubLists.get(splitListToSubLists.size() - 1 - posZero);
 				CopyOnWriteArrayList<String> acc = less(AC, outLists.get(posZero));
 				diagThreadsFJ dt = new diagThreadsFJ(outLists.get(posZero), s, acc, numberOfSplits);
-				dt.type = 1;  
-						
+				dt.type = 1;
+
 				dt.fork();
-				outLists.add(dt.join());						
+				outLists.add(dt.join());
 			}
-			
+
 			CopyOnWriteArrayList<String> fullSolution = plus(outLists);
 
 			return fullSolution;
@@ -356,44 +368,40 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 			}
 			return subLists;
 		}
-		
+
 		private CopyOnWriteArrayList<String> less(CopyOnWriteArrayList<String> aC, CopyOnWriteArrayList<String> s2) {
 			CopyOnWriteArrayList<String> res = new CopyOnWriteArrayList<String>();
 			res.addAll(aC);
 			res.removeAll(s2);
 			return res;
 		}
-		
+
 	}
 
 	private boolean isConsistent(Collection<String> aC) {
-   		
-		//First we create the content of the cnf
+
+		// First we create the content of the cnf
 		String cnf_content = "c CNF file\n";
 
 		// We show as comments the variables's number
 		Iterator<String> it = reasoner.variables.keySet().iterator();
 		while (it.hasNext()) {
 			String varName = it.next();
-			cnf_content += "c var " + reasoner.variables.get(varName) + " = " + varName
-					+ "\n";
+			cnf_content += "c var " + reasoner.variables.get(varName) + " = " + varName + "\n";
 		}
 
 		// Start the problem
-		cnf_content += "p cnf " + reasoner.variables.size() + " " +  relations.values().size()
-				+ "\n";
+		cnf_content += "p cnf " + reasoner.variables.size() + " " + (aC.size()) + "\n";
 		// Clauses
-		it = relations.values().iterator();
-		while (it.hasNext()) {
-			cnf_content += (String) it.next() + "\n";
+		for (String cons : aC) {
+			cnf_content += (String) relations.get(cons) + "\n";
+
 		}
 
 		// End file
 		cnf_content += "0";
-		ByteArrayInputStream stream= new ByteArrayInputStream(cnf_content.getBytes(StandardCharsets.UTF_8));
-		
-		
-		
+		ByteArrayInputStream stream = new ByteArrayInputStream(cnf_content.getBytes(StandardCharsets.UTF_8));
+
 		ISolver s = SolverFactory.newDefault();
 		Reader reader = new DimacsReader(s);
 		try {
@@ -401,15 +409,16 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 			return s.isSatisfiable();
 		} catch (TimeoutException | ParseFormatException | ContradictionException | IOException e) {
 			e.printStackTrace();
-			
+
 		}
 		return false;
+
 	}
-	
-		@Override
+
+	@Override
 	public void setProduct(Product p) {
 		// TODO Auto-generated method stub
-		
+
 	}
 
 	@Override
