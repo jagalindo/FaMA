@@ -60,8 +60,8 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 	public ExecutorService executorService;
 
 	public Sat4jExplainErrorFMDIAGParalell(int m, int t) {
-		this.m = m;
-		this.numberOfThreads = t;
+	  this.m = m;
+    this.numberOfThreads = t;
 	}
 	
 	public PerformanceResult answer(Reasoner r) throws FAMAException {
@@ -153,7 +153,8 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 		
 		Integer type; 
 		/*type 1 = main thread that can create other threads
-		  type 2 = thread to review base cases only
+
+    type 2 = thread to review base cases only
 		*/
 				
 		Integer res; 
@@ -262,7 +263,8 @@ public class Sat4jExplainErrorFMDIAGParalell extends Sat4jQuestion implements Va
 				less.add(less(AC,s));
 				
 				/*a new thread to define if it can directly find the preferred inconsistency*/
-				diagThreadsFJ dt = new diagThreadsFJ(s, rest.get(j), less.get(j) , this.numberOfSplits); 
+
+        diagThreadsFJ dt = new diagThreadsFJ(s, rest.get(j), less.get(j) , this.numberOfSplits); 
 				dt.type = 2; 
 				threads.add(dt);
 				

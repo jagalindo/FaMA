@@ -11,6 +11,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.sat4j.minisat.SolverFactory;
 import org.sat4j.reader.DimacsReader;
@@ -36,12 +37,13 @@ import es.us.isa.Sat4jReasoner.Sat4jResult;
 public class Sat4jExplainErrorFMDIAG extends Sat4jQuestion implements
 		ExplainErrorsQuestion {
 
-	public boolean returnAllPossibeExplanations=false;
+	public boolean returnAllPossibeExplanations = false;
 	private Sat4jReasoner reasoner;
-	public List<String> explanations;
 
-	Collection<Error> errors;
-	Map<String, String> relations =null;
+	Map<String, String> relations = null;
+	public boolean flexactive = false;
+	public int m = 1;
+
 
 	Product s, r;
 
@@ -54,57 +56,19 @@ public class Sat4jExplainErrorFMDIAG extends Sat4jQuestion implements
 	}
 
 	public PerformanceResult answer(Reasoner r) throws FAMAException {
-		
-		Sat4jResult res = new Sat4jResult();
 		reasoner = (Sat4jReasoner) r;
+		// solve the problem y fmdiag
+		relations = new HashMap<String, String>();
 
-		/*
-		if ((errors == null) || errors.isEmpty()) {
-			errors = new LinkedList<Error>();
-			return res;
+		Map<String, String> productConstraint = new HashMap<String, String>();
+		ArrayList<String> feats = new ArrayList<String>();
+		for (GenericFeature f : this.s.getFeatures()) {
+			String cnfVar = reasoner.getCNFVar(f.getName());
+			String name = "U_" + f.getName();
+			productConstraint.put(name, "-"+cnfVar+" 0");
+			feats.add(name);
 		}
-		
-		
-		Iterator<Error> itE = this.errors.iterator();
 
-		// mientras haya errores
-		while (itE.hasNext()) {
-			// crear una lista de constraints, que impondremos segun las
-			// observaciones
-			Error e = itE.next();
-
-			System.out.println("Explanations for "+e.toString());
-			Map<String,String> cons4obs = new HashMap<String,String>();
-			Observation obs = e.getObservation();
-			Map<? extends VariabilityElement, Object> values = obs.getObservation();
-			Iterator<?> its = values.entrySet().iterator();
-
-			// mientras haya observations
-			// las imponemos al problema como restricciones
-			while (its.hasNext()) {
-				int i=0;
-				try {
-					Entry<? extends VariabilityElement, Object> entry = (Entry<? extends VariabilityElement, Object>) its.next();
-					String clause;
-					int value = (Integer) entry.getValue();
-					VariabilityElement ve = entry.getKey();
-					if (ve instanceof GenericFeature) {
-						clause=reasoner.getVariables().get(ve.getName())+" "+value;
-						
-					} else {
-						clause=reasoner.getVariables().get(ve.getName())+" "+value;
-
-					}
-					cons4obs.put("Temporary"+i,clause);
-					i++;
-				} catch (ClassCastException exc) {
-				}
-			}
-			
-			*/
-			//solve the problem  y fmdiag
-
-			// solve the problem y fmdiag
 			relations = new HashMap<String, String>();
 
 			Map<String, String> productConstraint = new HashMap<String, String>();
@@ -236,14 +200,16 @@ public class Sat4jExplainErrorFMDIAG extends Sat4jQuestion implements
 		
 	}
 
-
+	@Override
 	public void setErrors(Collection<Error> colErrors) {
-		this.errors= colErrors;
+		// TODO Auto-generated method stub
+		
 	}
 
-
+	@Override
 	public Collection<Error> getErrors() {
-		return errors;
+		// TODO Auto-generated method stub
+		return null;
 	}
 
 }
