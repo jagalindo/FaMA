@@ -1,5 +1,10 @@
 package es.us.isa.Sat4j.fmdiag;
 
+import static es.us.isa.Sat4j.fmdiag.DiagHelpers.getRest;
+import static es.us.isa.Sat4j.fmdiag.DiagHelpers.less;
+import static es.us.isa.Sat4j.fmdiag.DiagHelpers.plus;
+import static es.us.isa.Sat4j.fmdiag.DiagHelpers.splitListToSubLists;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -10,12 +15,11 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.RecursiveTask;
 
 import org.sat4j.minisat.SolverFactory;
-import org.sat4j.minisat.core.Solver;
 import org.sat4j.reader.DimacsReader;
 import org.sat4j.reader.ParseFormatException;
 import org.sat4j.reader.Reader;
@@ -27,50 +31,39 @@ import es.us.isa.FAMA.Benchmarking.PerformanceResult;
 import es.us.isa.FAMA.Exceptions.FAMAException;
 import es.us.isa.FAMA.Reasoner.Reasoner;
 import es.us.isa.FAMA.Reasoner.questions.ValidConfigurationErrorsQuestion;
-import es.us.isa.FAMA.models.featureModel.Constraint;
 import es.us.isa.FAMA.models.featureModel.GenericFeature;
 import es.us.isa.FAMA.models.featureModel.Product;
 import es.us.isa.Sat4jReasoner.Sat4jQuestion;
 import es.us.isa.Sat4jReasoner.Sat4jReasoner;
 import es.us.isa.Sat4jReasoner.Sat4jResult;
 
-
 public class SATPFMDIAGNoRecursive extends Sat4jQuestion implements ValidConfigurationErrorsQuestion {
 
 	public boolean returnAllPossibeExplanations = false;
+	public int numberOfThreads;
+	String cnf_content = "c CNF file\n";		String clauses="";
+
+	ForkJoinPool pool = null;
+
 	private Sat4jReasoner reasoner;
 
 	Map<String, String> relations = null;
-	public boolean flexactive = false;
-	public int m = 1;
 
-	Product s,r;
+	Product s, r;
 	public Map<String, String> result = new HashMap<String, String>();
 
 	public void setConfiguration(Product s) {
-		this.s=s;
+		this.s = s;
 	}
 
 	public void setRequirement(Product r) {
-		this.r=r;
+		this.r = r;
 	}
-	
-	
-	public int numberOfThreads = 2;
-	public int baseSize = 100;
 
-	//public ExecutorService executorService = Executors.newCachedThreadPool();
-	//public ExecutorService executorService;
-	////////////For Parallel FlexDiag...
-
-	public SATPFMDIAGNoRecursive(int t){
-		this.m = 1;
+	public SATPFMDIAGNoRecursive(int t) {
 		this.numberOfThreads = t;
-
-		//executorService = Executors.newFixedThreadPool(2);
+		this.pool = new ForkJoinPool(numberOfThreads);
 	}
-	
-	//
 
 	public PerformanceResult answer(Reasoner r) throws FAMAException {
 		reasoner = (Sat4jReasoner) r;
@@ -82,44 +75,57 @@ public class SATPFMDIAGNoRecursive extends Sat4jQuestion implements ValidConfigu
 		for (GenericFeature f : this.s.getFeatures()) {
 			String cnfVar = reasoner.getCNFVar(f.getName());
 			String name = "U_" + f.getName();
-			productConstraint.put(name, "-"+cnfVar+" 0");
+			productConstraint.put(name, "-" + cnfVar + " 0");
 			feats.add(name);
 		}
 
 		Map<String, String> requirementConstraint = new HashMap<String, String>();
 		for (GenericFeature f : this.r.getFeatures()) {
 			String cnfVar = reasoner.getCNFVar(f.getName());
-			requirementConstraint.put("R_" + f.getName(), cnfVar+" 0");
+			requirementConstraint.put("R_" + f.getName(), cnfVar + " 0");
 		}
 
-		int cindex= 0;
-		for(String cl:reasoner.clauses){
-			relations.put(cindex+"rel", cl);
+		int cindex = 0;
+		for (String cl : reasoner.clauses) {
+			relations.put(cindex + "rel", cl);
 		}
 		relations.putAll(requirementConstraint);
 		relations.putAll(productConstraint);
 
-		//The use of this class is to force synced lists
-		CopyOnWriteArrayList<String> S = new CopyOnWriteArrayList<String>(feats);
-		CopyOnWriteArrayList<String> AC = new CopyOnWriteArrayList<String>(relations.keySet());
+
+		// First we create the content of the cnf file that's to be used by the consistent function
+		// We show as comments the variables's number
+		Iterator<String> it = reasoner.variables.keySet().iterator();
+		while (it.hasNext()) {
+			String varName = it.next();
+			cnf_content += "c var " + reasoner.variables.get(varName) + " = " + varName + "\n";
+		}
+
+		
+		for (String cons : reasoner.clauses) {
+			clauses += (String) cons + "\n";
+
+		}
+		
+		
+		List<String> S = new ArrayList<String>(feats);
+		List<String> AC = new ArrayList<String>(relations.keySet());
 
 		if (returnAllPossibeExplanations == false) {
-
-			List<String> fmdiag = fmdiag(S, AC);
-
+			List<String> fmdiag = pfmdiag(S, AC);
 			for (String s : fmdiag) {
 				result.put(s, productConstraint.get(s));
 			}
 
 		} else {
 			List<String> allExpl = new LinkedList<String>();
-			List<String> fmdiag = fmdiag(S, AC);
+			List<String> fmdiag = pfmdiag(S, AC);
 
 			while (fmdiag.size() != 0) {
 				allExpl.addAll(fmdiag);
 				S.removeAll(fmdiag);
 				AC.removeAll(fmdiag);
-				fmdiag = fmdiag(S, AC);
+				fmdiag = pfmdiag(S, AC);
 			}
 			for (String s : allExpl) {
 				result.put(s, productConstraint.get(s));
@@ -128,268 +134,116 @@ public class SATPFMDIAGNoRecursive extends Sat4jQuestion implements ValidConfigu
 
 		return new Sat4jResult();
 	}
-	
-	public CopyOnWriteArrayList<String> fmdiag(CopyOnWriteArrayList<String> S, CopyOnWriteArrayList<String> AC) {
-		//S is empty or (AC - S) non-consistent
+
+	public List<List<String>> divideSet(int numberOfSplits, List<String> S) {
+		int div = 0; // div is the size of the partitions
+
+		if (S.size() >= numberOfSplits) {
+			div = S.size() / numberOfSplits;
+			if ((S.size() % numberOfSplits) > 0)
+				div++;
+		} else
+			div = 1;
+
+		return splitListToSubLists(S, div);
+	}
+
+	public List<String> pfmdiag(List<String> S, List<String> AC) {
 		if (S.size() == 0 || !isConsistent(less(AC, S))) {
-			return new CopyOnWriteArrayList<String>();
-		} 
-		else { 		
-			//(AC + S) is non-consistent
-			ForkJoinPool pool = new ForkJoinPool(numberOfThreads);
-			diagThreadsFJ dt = new diagThreadsFJ(new CopyOnWriteArrayList<String>(), S, AC, numberOfThreads);			
-			CopyOnWriteArrayList<String> solution = pool.invoke(dt);
-			return solution;
+			return new LinkedList<String>();
+		} else {
+			// Divido S en n partes
+
+			Collection<ForkJoinTask<List<String>>> futures = new LinkedList<ForkJoinTask<List<String>>>();
+
+			List<String> solution = new LinkedList<String>();
+
+			List<List<String>> S_SET = divideSet(numberOfThreads, S);
+			for (List<String> S_i : S_SET) {
+
+				// Calculo los restos de cada parte
+				List<String> rest = getRest(S_i, S_SET);
+				List<String> less = less(AC, rest);
+
+				// Genero un thread por cada uno y ejecuto
+
+				Diagthread dt = new Diagthread(rest, S, less);
+				pool.execute(dt);
+
+				futures.add(dt);
+//				System.out.println(Thread.activeCount());
+			}
+			// System.out.println(Thread.activeCount());
+			// pool.invokeAll(futures);
+			for (ForkJoinTask<List<String>> subTask : futures) {
+				solution.addAll(subTask.join());
+			}
+
+			/* We save and return the union of the results of lists */
+			// List<String> fullSolution1 = plus(outLists);
+
+			/* FMDiag 2nd call */
+			// List<String> s = splitListToSubLists.get(actDiv);
+			List<String> less = less(AC, solution);
+
+			Diagthread dt = new Diagthread(solution, S, less);
+			// dt.fork();
+
+			return dt.invoke();
 		}
 	}
-	
-	private CopyOnWriteArrayList<String> less(CopyOnWriteArrayList<String> aC, CopyOnWriteArrayList<String> s2) {
-		CopyOnWriteArrayList<String> res = new CopyOnWriteArrayList<String>();
-		res.addAll(aC);
-		res.removeAll(s2);
-		return res;
-	}
-	
-	/*Only the 1st Thread can create children threads!*/
-	Boolean firstParallelization = true;
-	
-	public class diagThreadsFJ extends RecursiveTask<CopyOnWriteArrayList<String>>{
-		/**
-		 * 
-		 */
+
+	public class Diagthread extends RecursiveTask<List<String>> {
+
 		private static final long serialVersionUID = -7886822924012231609L;
-		CopyOnWriteArrayList<String> D, S, AC;
-		int numberOfSplits;
-		
-		
-		public diagThreadsFJ(CopyOnWriteArrayList<String> D, CopyOnWriteArrayList<String> S, CopyOnWriteArrayList<String> AC, int numberOfSplits){
-			this.D=D;
-			this.S=S;
-			this.AC=AC;
-			this.numberOfSplits=numberOfSplits;
-			
 
-		 }
-		
-		/*Each thread (instance of this class) presents values for its attributes D, S, and AC. 
-		 *(D + S) represents the set of rules to analyze; D and S are complementary, and S 
-		 *corresponds to the current solution set.
-		 *
-		 *At the start point of the call() method , always:
-		 *	- S represents the solution set.
-		 *	- D represents the complement set of S concerning the previous solution set.
-		 *	- AC represents the consistent rules of model C + the rules of S.  
-		 *
-		 *For the 1st thread always D is empty and S inconsistent. Then, AC is inconsistent.*/
-		
-		public CopyOnWriteArrayList<String> compute(){									
-			if (D.size() != 0 && isConsistent(AC)){	
-			   /*Since AC does not contain D, when D is not empty and AC is consistent, 
-			    *then D contains inconsistencies then D is analyzed to look for them*/
-		  	    return new CopyOnWriteArrayList<String>();				
-			}
-			
-			/*Since AC is non-consistent and D is not the inconsistencies source, then S is their source.
-			 *If this algorithmic solution is 'flexible' and the size of S is lesser or equal than m, then 
-			 *S is the looked inconsistencies set (m defines the solution flexibility to 
-			 *contains some consistent rules). 
-			 *
-			 *If this solution is not 'flexible' and S contains only one rule, then S is the looked inconsistent set*/
-			
-			/*2nd base case*/
-			if(flexactive){
-				if(S.size()<=m){
-				   return S;
-				}
-			}else{							
-				if (S.size()==1){
-		    	   return S;
-				}
-			}
-			
-			if (firstParallelization){
-				firstParallelization=false;
+		List<String> D, S, AC;
 
-				/*outList corresponds to a results list for the threads of the solution*/
-				CopyOnWriteArrayList<CopyOnWriteArrayList<String>> outLists= 
-						new CopyOnWriteArrayList<CopyOnWriteArrayList<String>>();
-			
-				////*DIVISION PHASE*////
-				int div = 0; //div is the size of the partitions
-							
-				if (S.size() >= numberOfSplits){
-				   div = S.size() / numberOfSplits;
-				   if ((S.size() % numberOfSplits)>0)
-					   div++;
-				}
-				else 
-					div = 1;
-				
-				CopyOnWriteArrayList<CopyOnWriteArrayList<String>> splitListToSubLists = splitListToSubLists(S, div);
-				int actDiv = 0, maxDiv = splitListToSubLists.size();
-			
-				CopyOnWriteArrayList<RecursiveTask<CopyOnWriteArrayList<String>>> forks = new CopyOnWriteArrayList<>();
-							
-				////*CONQUER PHASE*////
-				for(CopyOnWriteArrayList<String> s: splitListToSubLists){
-					/*For each partition 's', we define its complement 'rest' (AC - s) and  
-					 *the rules set 'less' (AC - rest). 
-					 *Then, a new thread 'dt' is defined with D=rest, S=s, and AC=less, 'dt' is run,
-					 *and its results are grouped in the results list*/ 		
-					if (actDiv == (maxDiv-1))
-						break;
+		public Diagthread(List<String> D, List<String> S, List<String> AC) {
+			this.D = D;
+			this.S = S;
+			this.AC = AC;
 
-					CopyOnWriteArrayList<String> rest= getRest(s,splitListToSubLists);	
-					CopyOnWriteArrayList<String> less = less(AC,rest);
-					
-					diagThreadsFJ dt = new diagThreadsFJ(rest, s,less , numberOfSplits);
-					dt.fork();
-					
-					forks.add(dt);
-					
-					if (actDiv < (maxDiv-1))
-						actDiv++;
-				}
-
-				for(RecursiveTask<CopyOnWriteArrayList<String>> subTask: forks){
-			       outLists.add(subTask.join());						
-				}
-				
-				/*We save and return the union of the results of lists*/
-				CopyOnWriteArrayList<String> fullSolution1 = plus(outLists);
-				
-				/*FMDiag 2nd call*/
-				CopyOnWriteArrayList<String> s = splitListToSubLists.get(actDiv);
-				CopyOnWriteArrayList<String> less = less(AC,fullSolution1);
-				
-				diagThreadsFJ dt = new diagThreadsFJ(fullSolution1, s,less , numberOfSplits);
-				dt.fork();
-				
-				outLists.add(dt.join());						
-				CopyOnWriteArrayList<String> fullSolution = plus(outLists);
-				
-				return fullSolution;
-
-			}else{
-				int k = S.size() / 2;
-				CopyOnWriteArrayList<String> S1 = new CopyOnWriteArrayList<String>(S.subList(0, k));
-				CopyOnWriteArrayList<String> S2 = new CopyOnWriteArrayList<String>(S.subList(k, S.size()));
-			
-				CopyOnWriteArrayList<String> A1 = diag(S2, S1, less(AC, S2));
-				CopyOnWriteArrayList<String> A2 = diag(A1, S2, less(AC, A1));
-				return plus(A1, A2);				
-			}
 		}
-		
-		
-		public CopyOnWriteArrayList<String> diag(CopyOnWriteArrayList<String> D, CopyOnWriteArrayList<String> S, CopyOnWriteArrayList<String> AC) {
-			if (D.size() != 0 && isConsistent(AC)) {
-				return new CopyOnWriteArrayList<String>();
-			}
-			if (flexactive) {
-				if (S.size() <= m) {
-					return S;
-				}
-			} else {
-				if (S.size() == 1) {
-					return S;
-				}
-			}
-			int k = S.size() / 2;
-			CopyOnWriteArrayList<String> S1 = new CopyOnWriteArrayList<String>(S.subList(0, k));
-			CopyOnWriteArrayList<String> S2 = new CopyOnWriteArrayList<String>(S.subList(k, S.size()));
 
-			CopyOnWriteArrayList<String> A1 = diag(S2, S1, less(AC, S2));
-			CopyOnWriteArrayList<String> A2 = diag(A1, S2, less(AC, A1));
+		public List<String> compute() {
+			return diag(this.D, this.S, this.AC);
+		}
+
+		public List<String> diag(List<String> D, List<String> S, List<String> AC) {
+			if (D.size() != 0 && isConsistent(AC)) {
+				return new ArrayList<String>();
+			}
+
+			if (S.size() == 1) {
+				return S;
+			}
+
+			int k = S.size() / 2;
+			List<String> S1 = new ArrayList<String>(S.subList(0, k));
+			List<String> S2 = new ArrayList<String>(S.subList(k, S.size()));
+
+			List<String> A1 = diag(S2, S1, less(AC, S2));
+			List<String> A2 = diag(A1, S2, less(AC, A1));
 			return plus(A1, A2);
 		}
-		
-		private CopyOnWriteArrayList<String> plus(CopyOnWriteArrayList<String> a1, CopyOnWriteArrayList<String> a2) {
-			CopyOnWriteArrayList<String> res = new CopyOnWriteArrayList<String>();
-			res.addAll(a1);
-			res.addAll(a2);
-			return res;
-		}
 
-		private CopyOnWriteArrayList<String> getRest(CopyOnWriteArrayList<String> s2, CopyOnWriteArrayList<CopyOnWriteArrayList<String>> splitListToSubLists) {
-			CopyOnWriteArrayList<String> res= new CopyOnWriteArrayList<String>();
-
-			for(CopyOnWriteArrayList<String> c: splitListToSubLists){
-				if(c!=s2){
-					res.addAll(c);
-				}
-			}
-			return res;
-		}
-
-		private CopyOnWriteArrayList<String> plus(CopyOnWriteArrayList<CopyOnWriteArrayList<String>> outLists) {
-			CopyOnWriteArrayList<String> res=new CopyOnWriteArrayList<String>();
-			for(List<String> s:outLists){	
-				res.addAll(s);
-			}
-			return res;
-		}
-
-		public <T> CopyOnWriteArrayList<CopyOnWriteArrayList<T>> splitListToSubLists(
-				CopyOnWriteArrayList<T> parentList, int subListSize) {
-			
-		  CopyOnWriteArrayList<CopyOnWriteArrayList<T>> subLists = new CopyOnWriteArrayList<CopyOnWriteArrayList<T>>();
-		  
-		  if (subListSize > parentList.size()) {
-		     subLists.add(parentList);
-		     } 
-		  else {
-		     int remainingElements = parentList.size();
-		     int startIndex = 0;
-		     int endIndex = subListSize;
-		     do {
-		    	 List<T> subList =  parentList.subList(startIndex, endIndex);
-		         subLists.add(new CopyOnWriteArrayList<T>(subList));
-		         startIndex = endIndex;
-		        if (remainingElements - subListSize >= subListSize) {
-		           endIndex = startIndex + subListSize;
-		        } else {
-		           endIndex = startIndex + remainingElements - subList.size();
-		        }
-		        remainingElements -= subList.size();
-		     } while (remainingElements > 0);
-
-		  }
-		  return subLists;	
-		}		
-		
-		private CopyOnWriteArrayList<String> less(CopyOnWriteArrayList<String> aC, CopyOnWriteArrayList<String> s2) {
-			CopyOnWriteArrayList<String> res = new CopyOnWriteArrayList<String>();
-			res.addAll(aC);
-			res.removeAll(s2);
-			return res;
-		}
-
-   }
-	
-	
+	}
 
 	private boolean isConsistent(Collection<String> aC) {
 
-		// First we create the content of the cnf
-		String cnf_content = "c CNF file\n";
-
-		// We show as comments the variables's number
-		Iterator<String> it = reasoner.variables.keySet().iterator();
-		while (it.hasNext()) {
-			String varName = it.next();
-			cnf_content += "c var " + reasoner.variables.get(varName) + " = " + varName + "\n";
-		}
-
 		// Start the problem
-		cnf_content += "p cnf " + reasoner.variables.size() + " " + (aC.size()) + "\n";
-		// Clauses
-		for(String cons:aC) {
-			cnf_content += (String) relations.get(cons) + "\n";
-			
-		}
+		String cnf_content=new String(this.cnf_content);
+		cnf_content += "p cnf " + reasoner.variables.size() + " " + (aC.size()+reasoner.clauses.size()) + "\n";
 	
+//		cnf_content+=clauses;
+		// Configuration clauses
+		for (String cons : aC) {
+			cnf_content += (String) relations.get(cons) + "\n";
 
+		}
+
+		cnf_content+=clauses;
 		// End file
 		cnf_content += "0";
 		ByteArrayInputStream stream = new ByteArrayInputStream(cnf_content.getBytes(StandardCharsets.UTF_8));
@@ -400,24 +254,22 @@ public class SATPFMDIAGNoRecursive extends Sat4jQuestion implements ValidConfigu
 			reader.parseInstance(stream);
 			return s.isSatisfiable();
 		} catch (TimeoutException | ParseFormatException | ContradictionException | IOException e) {
-			e.printStackTrace();
+			//e.printStackTrace();
 
 		}
 		return false;
 
 	}
-	
 
 	@Override
 	public void setProduct(Product p) {
-		// TODO Auto-generated method stub
-		
+		System.err.println("Do not use this method");
 	}
 
 	@Override
 	public boolean isValid() {
-		// TODO Auto-generated method stub
+		System.err.println("Do not use this method");
 		return false;
 	}
-	
+
 }

@@ -1,5 +1,8 @@
 package es.us.isa.Sat4j.fmdiag;
 
+import static es.us.isa.Sat4j.fmdiag.DiagHelpers.less;
+import static es.us.isa.Sat4j.fmdiag.DiagHelpers.plus;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -10,8 +13,6 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.sat4j.minisat.SolverFactory;
 import org.sat4j.reader.DimacsReader;
@@ -26,10 +27,8 @@ import es.us.isa.FAMA.Exceptions.FAMAException;
 import es.us.isa.FAMA.Reasoner.Reasoner;
 import es.us.isa.FAMA.Reasoner.questions.ExplainErrorsQuestion;
 import es.us.isa.FAMA.errors.Error;
-import es.us.isa.FAMA.errors.Observation;
 import es.us.isa.FAMA.models.featureModel.GenericFeature;
 import es.us.isa.FAMA.models.featureModel.Product;
-import es.us.isa.FAMA.models.variabilityModel.VariabilityElement;
 import es.us.isa.Sat4jReasoner.Sat4jQuestion;
 import es.us.isa.Sat4jReasoner.Sat4jReasoner;
 import es.us.isa.Sat4jReasoner.Sat4jResult;
@@ -38,8 +37,9 @@ public class Sat4jExplainErrorFMDIAG extends Sat4jQuestion implements ExplainErr
 
 	public boolean returnAllPossibeExplanations = false;
 	private Sat4jReasoner reasoner;
-	public List<String> explanations;
-
+	public Map<String, String> result = new HashMap<String, String>();
+	String cnf_content = "c CNF file\n";
+	String clauses = "";
 	Map<String, String> relations = null;
 	public boolean flexactive = false;
 	public int m = 1;
@@ -81,12 +81,25 @@ public class Sat4jExplainErrorFMDIAG extends Sat4jQuestion implements ExplainErr
 		relations.putAll(requirementConstraint);
 		relations.putAll(productConstraint);
 
-		ArrayList<String> S = reasoner.clauses;
-		ArrayList<String> AC = new ArrayList<String>(relations.keySet());
+		Iterator<String> it = reasoner.variables.keySet().iterator();
+		while (it.hasNext()) {
+			String varName = it.next();
+			cnf_content += "c var " + reasoner.variables.get(varName) + " = " + varName + "\n";
+		}
+
+		for (String cons : reasoner.clauses) {
+			clauses += (String) cons + "\n";
+
+		}
+
+		List<String> S = new ArrayList<String>(feats);
+		List<String> AC = new ArrayList<String>(relations.keySet());
+
 		if (returnAllPossibeExplanations == false) {
 			List<String> fmdiag = fmdiag(S, AC);
-			// System.out.println("Relation "+fmdiag.get(0)+" is causing the conflict");
-			explanations = fmdiag;
+			for (String s : fmdiag) {
+				result.put(s, productConstraint.get(s));
+			}
 		} else {
 			List<String> allExpl = new LinkedList<String>();
 			List<String> fmdiag = fmdiag(S, AC);
@@ -96,12 +109,12 @@ public class Sat4jExplainErrorFMDIAG extends Sat4jQuestion implements ExplainErr
 				AC.removeAll(fmdiag);
 				fmdiag = fmdiag(S, AC);
 			}
-			explanations = fmdiag;
-//				for(String str:allExpl){
-//					System.out.println("Relation "+str+" is causing the conflict");
-//				}
+			for (String s : allExpl) {
+				result.put(s, productConstraint.get(s));
+			}
+
 		}
-		return null;
+		return new Sat4jResult();
 
 	}
 
@@ -128,40 +141,21 @@ public class Sat4jExplainErrorFMDIAG extends Sat4jQuestion implements ExplainErr
 		return plus(A1, A2);
 	}
 
-	private List<String> plus(List<String> a1, List<String> a2) {
-		List<String> res = new ArrayList<String>();
-		res.addAll(a1);
-		res.addAll(a2);
-		return res;
-	}
 
-	private List<String> less(List<String> aC, List<String> s2) {
-		List<String> res = new ArrayList<String>();
-		res.addAll(aC);
-		res.removeAll(s2);
-		return res;
-	}
 
 	private boolean isConsistent(Collection<String> aC) {
 
-		// First we create the content of the cnf
-		String cnf_content = "c CNF file\n";
-
-		// We show as comments the variables's number
-		Iterator<String> it = reasoner.variables.keySet().iterator();
-		while (it.hasNext()) {
-			String varName = it.next();
-			cnf_content += "c var " + reasoner.variables.get(varName) + " = " + varName + "\n";
-		}
-
 		// Start the problem
-		cnf_content += "p cnf " + reasoner.variables.size() + " " + (aC.size()) + "\n";
-		// Clauses
-		for(String cons:aC) {
+		String cnf_content = new String(this.cnf_content);
+		cnf_content += "p cnf " + reasoner.variables.size() + " " + (aC.size()+reasoner.clauses.size()) + "\n";
+
+		// Configuration clauses
+		for (String cons : aC) {
 			cnf_content += (String) relations.get(cons) + "\n";
-			
+
 		}
-	
+
+		cnf_content+=clauses;
 
 		// End file
 		cnf_content += "0";
@@ -173,7 +167,7 @@ public class Sat4jExplainErrorFMDIAG extends Sat4jQuestion implements ExplainErr
 			reader.parseInstance(stream);
 			return s.isSatisfiable();
 		} catch (TimeoutException | ParseFormatException | ContradictionException | IOException e) {
-			e.printStackTrace();
+			// e.printStackTrace();
 
 		}
 		return false;
@@ -182,13 +176,12 @@ public class Sat4jExplainErrorFMDIAG extends Sat4jQuestion implements ExplainErr
 
 	@Override
 	public void setErrors(Collection<Error> colErrors) {
-		// TODO Auto-generated method stub
-
+		System.err.println("Do not use this method");
 	}
 
 	@Override
 	public Collection<Error> getErrors() {
-		// TODO Auto-generated method stub
+		System.err.println("Do not use this method");
 		return null;
 	}
 
