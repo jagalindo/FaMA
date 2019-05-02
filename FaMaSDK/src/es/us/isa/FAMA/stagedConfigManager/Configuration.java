@@ -20,7 +20,9 @@ package es.us.isa.FAMA.stagedConfigManager;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 
+import es.us.isa.FAMA.models.featureModel.Product;
 import es.us.isa.FAMA.models.variabilityModel.VariabilityElement;
 
 public class Configuration {
@@ -47,5 +49,13 @@ public class Configuration {
 		elements.put(ve, integer);
 	}
 	
-	
+	public Product getConfigurationAsProduct() {
+		Product p = new Product();
+		for(Entry<VariabilityElement, Integer> e : elements.entrySet()) {
+			if(e.getValue()==1) {
+				p.addElement(e.getKey());
+			}
+		}
+		return p;
+	}
 }
