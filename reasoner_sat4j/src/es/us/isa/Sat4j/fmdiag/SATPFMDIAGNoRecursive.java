@@ -189,7 +189,9 @@ public class SATPFMDIAGNoRecursive extends Sat4jQuestion implements ValidConfigu
 			Diagthread dt = new Diagthread(solution, S, less);
 			// dt.fork();
 
-			return plus(dt.invoke(),solution);
+			return dt.invoke();
+
+//			return plus(dt.invoke(),solution);
 		}
 	}
 
